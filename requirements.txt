@@ -1,0 +1,5 @@
+numpy
+# The ear = Soundgarden's audio engine (sibling project under Projects/, imported
+# at runtime; it needs numpy). Irix is optional (render-then-read mode only).
+sounddevice  # OPTIONAL: live-microphone ear (PortAudio). File path needs only stdlib+numpy.
+pytest  # dev/test

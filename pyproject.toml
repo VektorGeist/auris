@@ -1,0 +1,22 @@
+[project]
+name = "auris"
+version = "0.1.0"
+description = "Vanta's deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+# The ear is Soundgarden's audio engine (sibling project, imported at runtime).
+# Irix is optional — only the render-then-read mode uses it, and only if present.
+
+[project.optional-dependencies]
+dev = ["pytest"]
+mic = ["sounddevice"]   # live-microphone ear (PortAudio); core is stdlib+numpy
+
+[project.scripts]
+auris = "auris.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["auris"]
