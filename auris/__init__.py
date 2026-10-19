@@ -10,9 +10,10 @@ Sibling to Irix (the eyes). Working name; Flouk may rename.
 from __future__ import annotations
 
 from .sense import Ear
+from . import chladni
 
-__all__ = ["Ear", "hear_file"]
-__version__ = "0.1.0"
+__all__ = ["Ear", "hear_file", "chladni"]
+__version__ = "0.2.0"
 
 
 def hear_file(wav, **kw):
