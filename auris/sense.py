@@ -267,3 +267,40 @@ class Ear:
         return {"gallery": self.gallery.stats(),
                 "hippocampus": self.hippocampus.stats(),
                 "data_dir": str(self.dir)}
+
+    # --- chladni visualization ---------------------------------------------------
+    def chladni(self, samples, sr, size=128, as_images=False):
+        """Generate Chladni figures from audio.
+
+        Uses SoundGarden's cymatics math (mode 1) to visualize the vibration
+        patterns in the sound. Each figure corresponds to a time block.
+
+        Args:
+            samples: audio samples (numpy array)
+            sr: sample rate
+            size: each figure's size in pixels
+            as_images: if True, return PIL Images; else numpy arrays
+
+        Returns:
+            List of Chladni figures, one per time block
+        """
+        from . import chladni as _chladni
+        percepts, _ = self._transduce(samples, sr)
+        return _chladni.chladni_timeline(percepts, size=size, as_images=as_images)
+
+    def chladni_file(self, wav, size=128, as_images=False):
+        """Generate Chladni figures from a WAV file.
+
+        Args:
+            wav: path to WAV file
+            size: each figure's size in pixels
+            as_images: if True, return PIL Images; else numpy arrays
+
+        Returns:
+            List of Chladni figures, one per time block
+        """
+        from . import audio_io as _audio_io
+        from . import chladni as _chladni
+        sr, samples = _audio_io.read_wav(str(wav))
+        percepts, _ = self._transduce(samples, sr)
+        return _chladni.chladni_timeline(percepts, size=size, as_images=as_images)
