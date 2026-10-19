@@ -1,6 +1,6 @@
 [project]
-name = "auris"
-version = "0.1.0"
+name = "neuntauris"
+version = "0.2.0"
 description = "Vanta's deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
 requires-python = ">=3.9"
 dependencies = ["numpy"]
