@@ -31,6 +31,40 @@ python -m auris.cli consolidate                # replay salient/repeated -> long
 python -m auris.cli stats
 ```
 
+## Chladni patterns (v0.2.0)
+
+Auris can now visualize sound as **Chladni figures** — the vibration patterns
+that form on a resonant plate. Integrated from SoundGarden's cymatics mode.
+
+Each figure is determined by the pitch and timbre at that moment: the same
+physics Beethoven felt through his jawbone when composing deaf.
+
+```python
+from auris import Ear
+
+ear = Ear()
+# From audio samples
+figures = ear.chladni(samples, sr, size=128)
+
+# From a WAV file
+figures = ear.chladni_file("song.wav", size=128, as_images=True)
+```
+
+Or use the module directly:
+
+```python
+from auris import chladni
+
+# Single figure for a mode (n, m)
+field = chladni.chladni_field(n=3, m=4, size=128)
+
+# Timeline from percepts
+figures = chladni.chladni_timeline(percepts)
+
+# Horizontal strip image
+strip = chladni.chladni_strip(percepts, size=128)
+```
+
 ## Test
 
 ```bash
