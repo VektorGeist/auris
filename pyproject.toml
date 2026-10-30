@@ -1,6 +1,6 @@
 [project]
 name = "neuntauris"
-version = "0.2.0"
+version = "0.3.0"
 description = "Vanta's deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
 requires-python = ">=3.9"
 dependencies = ["numpy"]
@@ -10,6 +10,7 @@ dependencies = ["numpy"]
 [project.optional-dependencies]
 dev = ["pytest"]
 mic = ["sounddevice"]   # live-microphone ear (PortAudio); core is stdlib+numpy
+images = ["Pillow"]     # token-pack and labeled images only; core is numpy-only
 
 [project.scripts]
 auris = "auris.cli:main"
