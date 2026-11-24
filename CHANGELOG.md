@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The token pack described sounds through its own aggregate and
+  skipped the Ear's tonal / silent gate, so a chord read
+  "noise-like" in every pack segment and digital silence read
+  "noise-like" too. The gate now lives in one shared helper,
+  `perceive.gate`, which `sense.Ear` and `token_pack` both call;
+  pack segments carry tonal, silent and flatness, and
+  `perceive.describe` raises a clear error instead of defaulting
+  to "noise-like" when the gate fields are missing.
+- Silent pack segments no longer report an invented pitch: the
+  harmonic stack and the polyphony scan are skipped on silence
+  (they reported A0 at 27.5 Hz on digital silence). On non-silent
+  segments both outputs now carry a confidence, the top score
+  against the median score of the whole scan, so noise cannot
+  report a confident note.
+- `labeled_images` read the pre-plate chladni n/m fields when a
+  segment's modes list was empty, failing with
+  `labeled_images_error: 'n'` on silent segments. It now labels
+  from the modes list and skips a segment with no modes cleanly.
+- A missing input file ended in a raw traceback and a clip under
+  one block printed `{"available": false}` with no reason. Both
+  now print a one-line error to stderr and exit non-zero.
+
 ## v0.3.0
 
 ### Added
