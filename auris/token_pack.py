@@ -6,7 +6,10 @@ together:
 - structured text (perceive.describe, AURIS's own words, unchanged)
 - pitch, loudness, centroid, peak Hz, region, onset proxy,
   pitch and loudness trends
-- Chladni mode numbers (n, m) plus a Chladni figure image per segment
+- the Chladni plate per segment: the mode weights the segment's spectrum
+  excites on the square plate model in chladni.py (each mode carries its
+  own resonant frequency; the weights are numbers in the pack), plus the
+  figure of the weighted mix of mode shapes
 - spectrogram slice image per segment (tonotopic field, dB)
 - oscilloscope waveform per segment: amplitude over time, tokenized
   as peak, RMS, zero-crossing rate and a 20-bin envelope, plus a
@@ -41,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import wave
 from pathlib import Path
 
@@ -133,6 +137,15 @@ def main(argv=None):
     ap.add_argument("wav")
     ap.add_argument("--segments", type=int, default=20)
     ap.add_argument("--out", required=True)
+    ap.add_argument(
+        "--gallery",
+        default=None,
+        help="Path to the gallery.zip the pack reads for recognition. "
+        "Defaults to the AURIS_GALLERY environment variable, else "
+        "~/.auris/gallery.zip. Point it at the gallery taught for the "
+        "subject being examined; before this option existed the pack "
+        "could only ever read the one fixed home location.",
+    )
     ap.add_argument("--no-images", action="store_true")
     ap.add_argument(
         "--labeled-images",
@@ -150,10 +163,10 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
-    from . import audio_io, chladni, phonetics as _phon
+    from . import audio_io, chladni, phonetics as _phon, spectrotemporal
     from .cochlea import Cochlea
     from .gallery import SoundGallery
-    from .perceive import describe, region_word
+    from .perceive import describe, note_detail, region_word
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -172,10 +185,13 @@ def main(argv=None):
         print(json.dumps({"available": False}))
         return 1
 
-    # Read-only gallery, if present. Never writes.
+    # Read-only gallery, if present. Never writes. The gallery is chosen by
+    # --gallery / AURIS_GALLERY, falling back to the home location.
     gallery = None
+    gallery_path = (args.gallery or os.environ.get("AURIS_GALLERY")
+                    or str(Path.home() / ".auris" / "gallery.zip"))
     try:
-        gallery = SoundGallery(Path.home() / ".auris" / "gallery.zip")
+        gallery = SoundGallery(gallery_path)
         gallery._load()
     except Exception:
         gallery = None
@@ -236,18 +252,19 @@ def main(argv=None):
         }
         text = describe(agg)["text"]
 
-        if f0 > 0:
-            cn, cm = chladni.mode_numbers(
-                chladni.pitch_to_norm(f0), cen, mid_norm=min(1.0, max(0.0, mid))
-            )
-            cn, cm = int(cn), int(cm)
-        else:
-            cn, cm = 0, 0
+        # The plate: the segment's whole spectrum excites the square
+        # plate's modes, each at its own resonant frequency. The weights
+        # are the channel's numbers; the figure below is their mix. No
+        # mode is chosen by pitch.
+        seg_weights = chladni.plate_weights(mean_place,
+                                            centers=cochlea.centers)
+        seg_modes = chladni.top_modes(seg_weights, k=8)
 
         rec = None
         if gallery is not None:
             try:
-                rec = gallery.match(mean_place)
+                seg_traj = spectrotemporal.trajectory(seg)["traj"]
+                rec = gallery.match_any(mean_place, seg_traj)
             except Exception:
                 rec = None
 
@@ -257,6 +274,9 @@ def main(argv=None):
             "t_end": round(t_end, 2),
             "text": text,
             "f0_hz": round(f0, 1),
+            "note": note_detail(f0)[0],
+            "cents_off": (round(float(note_detail(f0)[1]), 1)
+                          if note_detail(f0)[1] is not None else None),
             "loud": round(loud, 3),
             "centroid": round(cen, 3),
             "peak_hz": round(peak_hz, 1),
@@ -264,12 +284,14 @@ def main(argv=None):
             "onset_flux_mean": round(onset_rate, 3),
             "pitch_trend": pitch_trend,
             "loud_trend": loud_trend,
-            "chladni": {"n": cn, "m": cm},
+            "chladni": {"modes": seg_modes,
+                        "weights": [round(float(w), 4) for w in seg_weights]},
             "harmonic_f0_hz": 0.0,
             "harmonic_midi": 0,
             "oscilloscope": None,
             "gallery": rec,
-            "gallery_calibration_warning": "The gallery default threshold is a synthetic placeholder; "
+            "gallery_calibration_warning": "The gallery descriptor threshold is a synthetic placeholder "
+            "and the trajectory threshold was measured on synthetic exam sets; "
             "calibrate on real captures before trusting a name.",
         }
 
@@ -341,13 +363,13 @@ def main(argv=None):
             except Exception as e:
                 seg_out["oscilloscope"]["image_error"] = str(e)
 
-        if not args.no_images and cn > 0:
+        if not args.no_images:
             try:
                 from PIL import Image
 
-                field = chladni.chladni_field(cn, cm, size=128)
+                field = chladni.plate_field(seg_weights, size=128)
                 img = Image.fromarray((field * 255).astype(np.uint8), mode="L")
-                p = out_dir / "images" / f"seg{i:02d}_chladni_n{cn}_m{cm}.png"
+                p = out_dir / "images" / f"seg{i:02d}_chladni.png"
                 img.save(p)
                 seg_out["chladni_image"] = str(p.name)
                 # Spectrogram slice: mean place x time for this segment, as dB image.

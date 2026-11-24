@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import audio_io, perceive, spectrotemporal
+from . import audio_io, chladni, perceive, spectrotemporal
 from .cochlea import Cochlea, BLOCK
 from .gallery import SoundGallery, DEFAULT_DIST
 from .hippocampus import Hippocampus
@@ -44,13 +44,20 @@ class Ear:
             t += dt
         return percepts, cochlea
 
-    def _aggregate(self, percepts, cochlea) -> dict:
+    def _aggregate(self, percepts, cochlea, rms=None) -> dict:
         P = np.array([p.place for p in percepts], dtype=np.float32)     # F x N
         place = np.median(P, axis=0)
         s = float(place.sum())
         place = (place / s if s > 0 else place).astype(np.float32)
         louds = np.array([p.loud for p in percepts], dtype=np.float32)
         loud = float(np.percentile(louds, 90))
+        # Silence: judged on the raw signal, never on the auto-gained envelope.
+        # rms < 1e-4 is -80 dBFS: digital silence / a dead-quiet room window.
+        energies = np.array([p.energy for p in percepts], dtype=np.float32)
+        if rms is not None:
+            silent = bool(rms < 1e-4)
+        else:
+            silent = bool(float(np.percentile(energies, 90)) == 0.0)
         centroid = float(np.median([p.centroid for p in percepts]))
         flatness = float(np.median([p.flatness for p in percepts]))
         # tone-vs-noise gate: a flat spectrum is noise/percussion, not a pitch,
@@ -58,7 +65,15 @@ class Ear:
         tonal = flatness <= 0.3
         voiced = [p.f0 for p in percepts if p.f0 > 0] if tonal else []
         frac_voiced = len(voiced) / len(percepts)
-        f0 = float(np.median(voiced)) if frac_voiced >= 0.3 else 0.0
+        # The pitch stands when the frames that carry one are a real
+        # share of a TONAL sound: on a tonal sound a voiced share of
+        # 0.15 already means the pitched frames agree on a pitch,
+        # and gating them out at 0.3 made near-identical hearings
+        # read as opposite descriptions (a tonal passage at 0.25
+        # voiced read "unpitched, noise-like" while its twin at
+        # 0.31 read "a pitched tone"). On a non-tonal sound the
+        # voiced list is already empty, so noise gets no pitch.
+        f0 = float(np.median(voiced)) if frac_voiced >= 0.15 else 0.0
         flux = np.array([p.flux for p in percepts], dtype=np.float32)
         thr = float(flux.mean() + flux.std())
         onsets = int(np.sum((flux[1:] > thr) & (flux[:-1] <= thr))) if len(flux) > 1 else 0
@@ -70,16 +85,26 @@ class Ear:
             a, b = np.median(voiced[:k]), np.median(voiced[-k:])
             pitch_trend = ("rising" if b > a * 1.03 else
                            "falling" if b < a * 0.97 else "steady")
-        lk = max(1, len(louds) // 3)
-        la, lb = float(louds[:lk].mean()), float(louds[-lk:].mean())
-        loud_trend = ("swelling" if lb > la * 1.15 else
-                      "fading" if lb < la * 0.85 else "steady")
+        # Loudness trend from RAW per-frame energy, not the envelope `loud`:
+        # the envelope's auto-gain peak decays and its attack ramps, so a
+        # perfectly steady tone read as "swelling". Raw energy is immune.
+        ek = max(1, len(energies) // 3)
+        ea, eb = float(energies[:ek].mean()), float(energies[-ek:].mean())
+        loud_trend = ("swelling" if eb > ea * 1.15 else
+                      "fading" if eb < ea * 0.85 else "steady")
         peak_hz = float(cochlea.centers[int(np.argmax(place))])
+        _note, _cents = perceive.note_detail(f0)
+        _cw = chladni.plate_weights(place, centers=cochlea.centers)
         return {"place": place, "loud": loud, "centroid": centroid, "f0": f0,
+                "note": _note,
+                "cents_off": (round(float(_cents), 1)
+                              if _cents is not None else None),
+                "chladni_modes": chladni.top_modes(_cw, k=5),
                 "flatness": round(flatness, 3), "tonal": tonal,
                 "frac_voiced": round(frac_voiced, 3), "onset_rate": onset_rate,
                 "pitch_trend": pitch_trend, "loud_trend": loud_trend,
                 "peak_hz": peak_hz, "duration": round(dur, 3),
+                "silent": silent,
                 "centers": cochlea.centers}
 
     def _trajectory(self, percepts, extra=None):
@@ -96,21 +121,24 @@ class Ear:
         percepts, cochlea = self._transduce(samples, sr)
         if not percepts:
             return {"error": "audio too short (need at least one 2048-sample block)"}
-        agg = self._aggregate(percepts, cochlea)
+        rms = float(np.sqrt(np.mean(samples ** 2))) if samples.size else 0.0
+        agg = self._aggregate(percepts, cochlea, rms=rms)
         desc = agg["place"]
         if mode == "render":
             p = perceive.describe_render(percepts, agg, out_dir=self.dir)
         else:
             p = perceive.describe(agg)
 
-        rec = self.gallery.match(desc)
+        traj = self._trajectory(percepts)
+        rec = self.gallery.match_any(desc, traj["traj"])
         novelty = 1.0 if rec["dist"] is None else float(
             min(1.0, rec["dist"] / max(DEFAULT_DIST, 1e-6)))
         salience = round(float(0.5 * agg["loud"] + 0.5 * novelty), 4)
 
         if remember_as:
             self.gallery.remember(desc, remember_as,
-                                  meta={"summary": p["text"], "note": p.get("note")})
+                                  meta={"summary": p["text"], "note": p.get("note")},
+                                  traj=traj["traj"])
             rec = {"name": remember_as, "dist": 0.0, "known": True,
                    "nearest": remember_as}
 

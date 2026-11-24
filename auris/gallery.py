@@ -20,10 +20,33 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_DIST = float(os.environ.get("AURIS_MATCH_DIST", "0.35"))
-# 0.35 = synthetic placeholder (same-sound chi2 is small, different-sound larger).
-# Calibrate on real captures before trusting in the wild — same status as Irix's
-# face/object thresholds started in.
+DEFAULT_DIST = float(os.environ.get("AURIS_MATCH_DIST", "0.0587"))
+# Descriptor (median place vector, chi2) match threshold. MEASURED BASIS:
+# the equal-error point of the same-class vs different-class chi2
+# distributions on the 2026-11-23 exam teach/test sets (modal-synthesis
+# containers, 8 classes, 4 teach + 4 test takes each), measured
+# 2026-11-24 AFTER the ear fixes of that day: 16.3% false-accept and
+# 16.4% false-reject at this value — the classes overlap even on
+# synthetic material, so this is a balance point, not a separation.
+# NOT calibrated on real recordings: on real music pieces (the
+# composing drafts) same-class descriptor distances averaged 0.358 in
+# the post-fix leave-one-out measurement, far above this value, so on
+# real material this threshold mostly rejects. A real-capture
+# calibration is still outstanding; do not read 0.0587 as universal.
+
+DEFAULT_TRAJ_DIST = float(os.environ.get("AURIS_TRAJ_DIST", "0.0533"))
+# Trajectory (DTW) match threshold, on the same mean-per-frame chi2 scale
+# as DEFAULT_DIST. MEASURED BASIS: the equal-error point of the
+# same-class vs different-class DTW distributions on the same
+# 2026-11-23 exam sets, measured 2026-11-24 AFTER the ear fixes of that
+# day (the fixes compressed the distance scale; the earlier 0.11 was
+# measured before them and false-accepted 31% of different-class pairs
+# on these sets afterwards): 9.4% false-accept and 9.4% false-reject at
+# this value. NOT calibrated on real recordings: on the composing
+# drafts same-class DTW distances averaged 0.489 in the post-fix
+# leave-one-out measurement, far above this value, so on real material
+# this threshold mostly rejects. A real-capture calibration is still
+# outstanding; do not read 0.0533 as universal.
 
 
 def chi2(a, b) -> float:
@@ -56,27 +79,46 @@ class SoundGallery:
                     npy = eid + ".npy"
                     if npy in names:
                         desc = np.load(io.BytesIO(z.read(npy)))
-                        out[eid] = {**meta, "desc": desc}
+                        entry = {**meta, "desc": desc}
+                        traj_npy = eid + ".traj.npy"
+                        if traj_npy in names:
+                            entry["traj"] = np.load(io.BytesIO(z.read(traj_npy)))
+                        out[eid] = entry
         self._cache = out
         return out
 
-    def _append(self, eid: str, desc, meta: dict) -> None:
+    def _append(self, eid: str, desc, meta: dict, traj=None) -> None:
         nb = io.BytesIO()
         np.save(nb, np.asarray(desc, dtype=np.float32))
+        tb = None
+        if traj is not None:
+            tb = io.BytesIO()
+            np.save(tb, np.asarray(traj, dtype=np.float32))
         mode = "a" if Path(self.path).exists() else "w"
         with zipfile.ZipFile(self.path, mode, zipfile.ZIP_DEFLATED) as z:
             z.writestr(eid + ".npy", nb.getvalue())
+            if tb is not None:
+                z.writestr(eid + ".traj.npy", tb.getvalue())
             z.writestr(eid + ".json", json.dumps(meta))
         if self._cache is not None:
-            self._cache[eid] = {**meta, "desc": np.asarray(desc, dtype=np.float32)}
+            entry = {**meta, "desc": np.asarray(desc, dtype=np.float32)}
+            if traj is not None:
+                entry["traj"] = np.asarray(traj, dtype=np.float32)
+            self._cache[eid] = entry
 
-    def remember(self, desc, name: str, meta: dict | None = None) -> str:
-        """Store one sound exemplar's descriptor under `name`. Returns entry id."""
+    def remember(self, desc, name: str, meta: dict | None = None,
+                 traj=None) -> str:
+        """Store one sound exemplar's descriptor under `name`. Returns entry id.
+
+        `traj` (optional) is the sound's spectrotemporal trajectory (T x F);
+        when stored, the exemplar can also be matched by trajectory (DTW),
+        which keeps the sound's shape over time that the aggregated
+        descriptor collapses."""
         eid = uuid.uuid4().hex
         m = {"name": name, "ts": time.time()}
         if meta:
             m.update(meta)
-        self._append(eid, desc, m)
+        self._append(eid, desc, m, traj=traj)
         return eid
 
     def match(self, desc, threshold: float | None = None) -> dict:
@@ -91,6 +133,39 @@ class SoundGallery:
         return {"name": best_name if known else None,
                 "dist": round(best, 4) if best_name is not None else None,
                 "known": known, "nearest": best_name}
+
+    def match_traj(self, traj, threshold: float | None = None) -> dict:
+        """Nearest remembered sound by trajectory — DTW over stored trajectories.
+
+        Only exemplars remembered with a trajectory take part. The distance is
+        spectrotemporal.dtw's mean per-frame chi2, on the same scale as the
+        descriptor distance, so the two thresholds are comparable."""
+        from . import spectrotemporal
+        thr = DEFAULT_TRAJ_DIST if threshold is None else threshold
+        best_name, best = None, 1e9
+        for e in self._load().values():
+            if "traj" not in e:
+                continue
+            d = spectrotemporal.dtw(traj, e["traj"])
+            if d < best:
+                best, best_name = d, e["name"]
+        known = best_name is not None and best <= thr
+        return {"name": best_name if known else None,
+                "dist": round(best, 4) if best_name is not None else None,
+                "known": known, "nearest": best_name, "via": "trajectory"}
+
+    def has_traj(self) -> bool:
+        return any("traj" in e for e in self._load().values())
+
+    def match_any(self, desc, traj=None, threshold: float | None = None,
+                  traj_threshold: float | None = None) -> dict:
+        """Best available recognition: trajectory when the query carries one
+        and the gallery holds trajectory exemplars, else the descriptor."""
+        if traj is not None and self.has_traj():
+            return self.match_traj(traj, threshold=traj_threshold)
+        out = self.match(desc, threshold=threshold)
+        out["via"] = "descriptor"
+        return out
 
     def identities(self) -> set:
         return {e["name"] for e in self._load().values()}

@@ -23,6 +23,23 @@ def note_name(f0: float):
     return f"{NOTE_NAMES[midi % 12]}{midi // 12 - 1}"
 
 
+def note_detail(f0: float):
+    """(note name, cents from that exact note) for a pitch, or (None, None).
+
+    The readout carries note identity in this form — the precise pitch, the
+    nearest note's name, and the signed distance from that note in cents —
+    so a reader can tell neighbouring keys apart from the readout itself
+    wherever the ear measured a pitch. The place line never could: 32
+    places serve 88 keys, so neighbours share a place reading by design.
+    """
+    if not f0 or f0 <= 0:
+        return None, None
+    midi = int(round(69 + 12 * math.log2(f0 / 440.0)))
+    exact = 440.0 * 2 ** ((midi - 69) / 12)
+    cents = 1200.0 * math.log2(f0 / exact)
+    return f"{NOTE_NAMES[midi % 12]}{midi // 12 - 1}", cents
+
+
 def _loud_word(x):
     return ("silent" if x < 0.03 else "very quiet" if x < 0.12 else
             "quiet" if x < 0.3 else "moderate" if x < 0.6 else
@@ -62,12 +79,39 @@ def describe_word(cohort, phon_summary=None, vot=None) -> str:
 
 def describe(agg: dict) -> dict:
     """features-to-text account of an aggregated percept."""
-    note = note_name(agg["f0"])
+    if agg.get("silent"):
+        # Explicit silence: no pitch, no timbre, no energy centre. Before this
+        # guard, a silent input was described as "an unpitched, noise-like
+        # sound ... energy centred around 44 Hz" — a claim about nothing.
+        return {
+            "text": "silence.",
+            "note": None,
+            "cents_off": None,
+            "chladni_modes": [],
+            "f0": 0.0,
+            "loud": round(float(agg["loud"]), 3),
+            "centroid": round(float(agg["centroid"]), 3),
+            "peak_hz": 0.0,
+            "region": region_word(0),
+            "onset_rate": 0.0,
+            "pitch_trend": None,
+            "loud_trend": "steady",
+            "silent": True,
+            "mode": "features-to-text",
+        }
+    note, cents = note_detail(agg["f0"])
     parts = []
     if note:
-        parts.append(f"a pitched tone near {note} ({agg['f0']:.0f} Hz)")
+        parts.append(f"a pitched tone, {note} at {agg['f0']:.1f} Hz "
+                     f"({cents:+.0f} cents from exact {note})")
     elif agg.get("onset_rate", 0) >= 1.5:
         parts.append("an unpitched, percussive sound")
+    elif agg.get("tonal"):
+        # The sound's own flatness says tonal: with no single pitch
+        # standing out it is an unpitched TONAL sound (a chord, a drone,
+        # a dense passage), never "noise-like" — that wording follows
+        # the flatness measurement, not the absence of a pitch.
+        parts.append("an unpitched, tonal sound")
     else:
         parts.append("an unpitched, noise-like sound")
     parts.append(_loud_word(agg["loud"]))
@@ -80,9 +124,15 @@ def describe(agg: dict) -> dict:
         parts.append(f"pitch {agg['pitch_trend']}")
     if agg.get("loud_trend") and agg["loud_trend"] != "steady":
         parts.append(agg["loud_trend"])
+    modes = agg.get("chladni_modes") or []
+    if modes:
+        parts.append("plate modes ringing strongest: " + ", ".join(
+            f"({n},{m}) {w:.2f}" for n, m, w in modes[:3]))
     return {
         "text": ", ".join(parts) + ".",
         "note": note,
+        "cents_off": (round(float(cents), 1) if cents is not None else None),
+        "chladni_modes": modes,
         "f0": round(float(agg["f0"]), 1),
         "loud": round(float(agg["loud"]), 3),
         "centroid": round(float(agg["centroid"]), 3),

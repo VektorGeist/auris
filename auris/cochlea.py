@@ -17,7 +17,14 @@ from . import _ear
 SR = 44100
 BLOCK = 2048
 N_PLACE = 32                 # tonotopic bins (cochlear "places")
-FMIN, FMAX = 40.0, 16000.0
+# The floor is 20 Hz, below the lowest key (A0 = 27.5 Hz). At the old 40 Hz
+# floor the bottom keys (A0 through D#1) sat under the first place entirely
+# and all piled onto a single place reading.
+FMIN, FMAX = 20.0, 16000.0
+# The place map is computed on a zero-padded FFT, like the Analyzer's
+# spectrum: the raw 21.5 Hz bin grid makes the map's fine structure depend
+# on where a tone happens to fall between bins.
+NFFT = 16384
 
 
 @dataclass
@@ -44,19 +51,39 @@ class Cochlea:
         audio = _ear.ear_audio()
         self.analyzer = audio.Analyzer(sr=sr, block=block)        # the ear
         self.window = np.hanning(block).astype(np.float32)
-        self.freqs = np.fft.rfftfreq(block, 1.0 / sr)
+        self.freqs = np.fft.rfftfreq(NFFT, 1.0 / sr)
         edges = np.geomspace(FMIN, min(FMAX, sr / 2.0), n_place + 1)
         self.edges = edges
         self.centers = np.sqrt(edges[:-1] * edges[1:])            # bin centre Hz
-        self._bin_idx = [
-            np.where((self.freqs >= edges[i]) & (self.freqs < edges[i + 1]))[0]
-            for i in range(n_place)
-        ]
+        # Soft (triangular) assignment of spectral power to places, on the
+        # log-frequency axis. Hard bin sums discard WHERE inside a place a
+        # tone's energy sits, and a place spans about 3.6 semitones, so at
+        # high frequencies two different notes inside one place produced
+        # identical place vectors while two notes straddling an edge sat at
+        # maximum distance: a step function, not a hearing. With triangular
+        # weights each bin's power is shared between the two nearest place
+        # centres in proportion to its log-distance from them, so the place
+        # vector moves smoothly as frequency moves and carries the tone's
+        # position inside the place as well as the place itself.
+        logc = np.log(self.centers)
+        step = float(logc[1] - logc[0])
+        logf = np.log(np.maximum(self.freqs, 1e-9))
+        w = 1.0 - np.abs(logf[:, None] - logc[None, :]) / step
+        w = np.clip(w, 0.0, None)
+        w[self.freqs < FMIN] = 0.0
+        self._place_w = w.astype(np.float32)
 
     def _place_map(self, block: np.ndarray):
-        mag = np.abs(np.fft.rfft(block * self.window))
-        v = np.array([mag[idx].sum() if idx.size else 0.0
-                      for idx in self._bin_idx], dtype=np.float32)
+        mag = np.abs(np.fft.rfft(block * self.window, n=NFFT))
+        # Place energies are POWER sums (magnitude squared), not magnitude
+        # sums. A windowed tone's leakage floor sits about 31 dB down in
+        # magnitude but 62 dB down in power; with magnitude sums the small
+        # places were dominated by that leakage, whose pattern depends on
+        # where the tone falls between FFT bins, so at high frequencies the
+        # same note repeated could sit farther apart than two different
+        # notes. Power sums make the map read the tone's own energy
+        # distribution instead of the window's leakage.
+        v = (self._place_w.T @ (mag ** 2)).astype(np.float32)
         s = float(v.sum())
         # spectral flatness (geometric/arithmetic mean, skip DC): ~0 for a tone,
         # ~1 for noise. This is the tone-vs-noise discriminator the pitch gate lacks.

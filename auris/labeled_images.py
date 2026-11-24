@@ -69,7 +69,13 @@ def centers_for(sr):
 def label_chladni(src, dst, seg):
     from PIL import Image, ImageDraw
 
-    n, m = seg["chladni"]["n"], seg["chladni"]["m"]
+    modes = seg["chladni"].get("modes") or []
+    if modes:
+        n, m, w = modes[0]
+        title = f"Chladni plate  strongest mode n={n}  m={m}  w={w:.2f}"
+    else:  # packs written before the plate model carried one (n, m) pair
+        n, m = seg["chladni"]["n"], seg["chladni"]["m"]
+        title = f"Chladni  n={n}  m={m}"
     f0 = seg.get("f0_hz", 0.0)
     hf = seg.get("harmonic_f0_hz", 0.0)
     im = Image.open(src).convert("RGB")
@@ -78,7 +84,7 @@ def label_chladni(src, dst, seg):
     canvas = Image.new("RGB", (width, height), (255, 255, 255))
     canvas.paste(pat, (88, 80))
     d = ImageDraw.Draw(canvas)
-    d.text((88, 8), f"Chladni  n={n}  m={m}", fill=(0, 0, 0), font=font(28, True))
+    d.text((88, 8), title, fill=(0, 0, 0), font=font(28, True))
     d.text(
         (88, 42),
         f"pitch {note_name(f0)}  {f0:.1f} Hz (AURIS f0)"
@@ -88,13 +94,13 @@ def label_chladni(src, dst, seg):
     )
     d.text(
         (88, height - 36),
-        "Pattern = vibration shape. (n,m) drawn here from JSON;",
+        "Pattern = weighted mix of plate modes the spectrum excited;",
         fill=(60, 60, 60),
         font=font(13),
     )
     d.text(
         (88, height - 18),
-        "pattern alone does not uniquely identify (n,m).",
+        "the mode weights themselves are in the JSON.",
         fill=(60, 60, 60),
         font=font(13),
     )
