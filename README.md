@@ -11,7 +11,7 @@ exemplars. Sibling to **Irix** (the eyes).
 
 | Organ | Module | What it does |
 |---|---|---|
-| Ear | `cochlea.py` (+ Soundgarden's `Analyzer`) | sound → features + a **tonotopic place map** (sound in space) |
+| Ear | `cochlea.py` (+ its own `Analyzer` in `audio_engine.py`) | sound → features + a **tonotopic place map** (sound in space) |
 | Perception | `perceive.py` (Irix idiom) | field → **structured text** — `features` mode (fast) or `render` mode (see-then-read) |
 | Hippocampus | `hippocampus.py` | **episodic memory**: bind → hold → consolidate (replay) → recall (pattern completion) |
 | Recognition | `gallery.py` | a growing store of remembered sounds → names by nearest-neighbour ("no ceiling = memory") |
@@ -128,7 +128,8 @@ python -m pytest tests/ -v
 
 - **No AI / no model, ever.** DSP + geometry + remembered exemplars only.
 - **Afferent-only** — a sense, not a controller.
-- Reuse, don't fork: the ear is Soundgarden's audio engine; Irix (optional) reads the
+- Self-contained: the ear is AURIS's own audio engine, in `audio_engine.py` inside
+  this package; Irix (optional) reads the
   rendered field in `render` mode. Auris owns the hippocampus and the sound gallery.
 
 Data lives in `~/.auris/` (override with `AURIS_DIR`).

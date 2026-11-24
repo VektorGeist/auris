@@ -4,7 +4,7 @@ version = "0.3.0"
 description = "Vanta's deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
 requires-python = ">=3.9"
 dependencies = ["numpy"]
-# The ear is Soundgarden's audio engine (sibling project, imported at runtime).
+# The ear is AURIS's own audio engine, in auris/audio_engine.py inside this package.
 # Irix is optional — only the render-then-read mode uses it, and only if present.
 
 [project.optional-dependencies]
