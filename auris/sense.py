@@ -51,29 +51,18 @@ class Ear:
         place = (place / s if s > 0 else place).astype(np.float32)
         louds = np.array([p.loud for p in percepts], dtype=np.float32)
         loud = float(np.percentile(louds, 90))
-        # Silence: judged on the raw signal, never on the auto-gained envelope.
-        # rms < 1e-4 is -80 dBFS: digital silence / a dead-quiet room window.
         energies = np.array([p.energy for p in percepts], dtype=np.float32)
-        if rms is not None:
-            silent = bool(rms < 1e-4)
-        else:
-            silent = bool(float(np.percentile(energies, 90)) == 0.0)
         centroid = float(np.median([p.centroid for p in percepts]))
-        flatness = float(np.median([p.flatness for p in percepts]))
-        # tone-vs-noise gate: a flat spectrum is noise/percussion, not a pitch,
-        # even when Soundgarden's peak-picker fires on a spiky noise bin.
-        tonal = flatness <= 0.3
-        voiced = [p.f0 for p in percepts if p.f0 > 0] if tonal else []
-        frac_voiced = len(voiced) / len(percepts)
-        # The pitch stands when the frames that carry one are a real
-        # share of a TONAL sound: on a tonal sound a voiced share of
-        # 0.15 already means the pitched frames agree on a pitch,
-        # and gating them out at 0.3 made near-identical hearings
-        # read as opposite descriptions (a tonal passage at 0.25
-        # voiced read "unpitched, noise-like" while its twin at
-        # 0.31 read "a pitched tone"). On a non-tonal sound the
-        # voiced list is already empty, so noise gets no pitch.
-        f0 = float(np.median(voiced)) if frac_voiced >= 0.15 else 0.0
+        # The tonal / silent / voiced-share gate lives in perceive.gate,
+        # shared with token_pack so the two describing paths cannot
+        # drift apart again.
+        _g = perceive.gate(percepts, rms=rms)
+        silent = _g["silent"]
+        flatness = _g["flatness"]
+        tonal = _g["tonal"]
+        voiced = _g["voiced"]
+        frac_voiced = _g["frac_voiced"]
+        f0 = _g["f0"]
         flux = np.array([p.flux for p in percepts], dtype=np.float32)
         thr = float(flux.mean() + flux.std())
         onsets = int(np.sum((flux[1:] > thr) & (flux[:-1] <= thr))) if len(flux) > 1 else 0

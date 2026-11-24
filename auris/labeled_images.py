@@ -4,10 +4,12 @@ Original PNGs are never overwritten. Labeled versions are written
 alongside them as ``*_labeled.png``.
 
 What is drawn, and what is not claimed:
-- Chladni: "n=X m=Y" plus pitch in Hz and note name, drawn as text.
-  The pattern itself is unchanged (upscaled with NEAREST so nodal
-  lines stay crisp). The (n, m) numbers come from token_pack.json,
-  not from reading the pattern. A vision model given the unlabeled
+- Chladni: "strongest mode n=X m=Y w=..." plus pitch in Hz and
+  note name, drawn as text. The pattern itself is unchanged
+  (upscaled with NEAREST so nodal lines stay crisp). The mode
+  numbers come from the modes list in token_pack.json, not from
+  reading the pattern. A segment whose modes list is empty
+  (silence excited no mode) gets no Chladni label. A vision model given the unlabeled
   pattern alone still cannot uniquely identify (n, m) without a
   reference chart; the label is what makes it readable.
 - Spectrogram: the original is (width x 32 places), row 0 = lowest
@@ -73,9 +75,15 @@ def label_chladni(src, dst, seg):
     if modes:
         n, m, w = modes[0]
         title = f"Chladni plate  strongest mode n={n}  m={m}  w={w:.2f}"
-    else:  # packs written before the plate model carried one (n, m) pair
+    elif "n" in seg["chladni"] and "m" in seg["chladni"]:
+        # packs written before the plate model carried one (n, m) pair
         n, m = seg["chladni"]["n"], seg["chladni"]["m"]
         title = f"Chladni  n={n}  m={m}"
+    else:
+        # No modes excited and no legacy pair: a silent segment.
+        # There is no mode to name, so skip this label cleanly
+        # instead of failing on the missing fields.
+        return None
     f0 = seg.get("f0_hz", 0.0)
     hf = seg.get("harmonic_f0_hz", 0.0)
     im = Image.open(src).convert("RGB")
@@ -221,11 +229,13 @@ def label_pack(pack_dir, indices=None):
                 continue
             dst = imgs / (src.stem + "_labeled.png")
             if kind == "chladni":
-                label_chladni(src, dst, seg)
+                made = label_chladni(src, dst, seg)
             elif kind == "spectrogram":
-                label_spectrogram(src, dst, seg, sr)
+                made = label_spectrogram(src, dst, seg, sr)
             else:
-                label_waveform(src, dst, seg)
+                made = label_waveform(src, dst, seg)
+            if made is None:
+                continue
             out.append(str(dst.name))
     return out
 

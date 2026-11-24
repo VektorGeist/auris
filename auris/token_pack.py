@@ -29,6 +29,12 @@ together:
   candidates are a candidate list only, not a replacement pitch,
   and they still fail on noise and on sequential notes inside one
   window.
+- the segment text is gated by perceive.gate, the same tonal /
+  silent / voiced-share gate the Ear uses, so the pack and the
+  Ear describe a sound the same way. The harmonic and polyphony
+  outputs each carry a confidence (top score against the median
+  score of the whole scan); silent segments skip both scans and
+  report empty results, never an invented pitch.
 
 This is a wrapper around existing AURIS code. It uses equal
 segments over the file and Cochlea directly, so the Ear's
@@ -45,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import wave
 from pathlib import Path
 
@@ -69,10 +76,14 @@ def harmonic_f0(samples, sr):
     """Harmonic-stack pitch: score MIDI 21-108 by f+2f+3f+4f energy.
 
     Fixes octave errors where a harmonic is louder than the
-    fundamental. Returns (f_hz, midi) or (0.0, 0).
+    fundamental. Returns (f_hz, midi, confidence), or (0.0, 0, 0.0)
+    on short or empty input. Confidence is the winning score against
+    the median score across the whole MIDI scan: a real tone's stack
+    stands far above the field, while noise scores are all alike, so
+    noise cannot report a confident note.
     """
     if samples is None or len(samples) < 1024 or sr <= 0:
-        return 0.0, 0
+        return 0.0, 0, 0.0
     seg = samples[: sr * 2]
     spectrum = np.abs(np.fft.rfft(seg * np.hanning(len(seg))))
     freqs = np.fft.rfftfreq(len(seg), 1 / sr)
@@ -84,15 +95,19 @@ def harmonic_f0(samples, sr):
         return float(np.max(spectrum[max(0, i - 1) : i + 2]))
 
     best = (0.0, 0, -1.0)
+    scores = []
     for midi in range(21, 109):
         f = 440.0 * 2 ** ((midi - 69) / 12)
         score = sum(w * energy_at(f * k) for k, w in [(1, 1.0), (2, 0.6), (3, 0.4), (4, 0.3)])
         sub = sum(w * energy_at((f / 2) * k) for k, w in [(1, 1.0), (2, 0.6), (3, 0.4)])
         if sub > score * 0.9:
             score *= 0.5
+        scores.append(score)
         if score > best[2]:
             best = (f, midi, score)
-    return round(float(best[0]), 1), int(best[1])
+    med = float(np.median(scores)) if scores else 0.0
+    confidence = round(float(best[2] / med), 3) if med > 0 else 0.0
+    return round(float(best[0]), 1), int(best[1]), confidence
 
 
 def polyphony_candidates(samples, sr, n=5):
@@ -102,20 +117,27 @@ def polyphony_candidates(samples, sr, n=5):
     semitone non-maximum suppression, first 2 s of the segment
     (stack_scores truncates). Scores are raw FFT-magnitude sums,
     so score_norm (candidate / top score) is the comparable
-    number, not the raw score. Returns [] on short or empty input.
+    number, not the raw score. Returns (candidates, confidence),
+    ([], 0.0) on short or empty input. Confidence is the top
+    score against the median score across the whole MIDI scan:
+    real tones stand far above the field, noise does not, so
+    noise cannot report a confident note.
     It does not apply the sub-octave suppression in harmonic_f0,
     so octave-below candidates can and do appear in the list;
     that is a known failure mode, reported, not hidden.
     """
     if samples is None or len(samples) < 1024 or sr <= 0:
-        return []
+        return [], 0.0
     try:
         scores = stack_scores(samples, sr)
         peaks = top_peaks(scores, n)
     except Exception:
-        return []
+        return [], 0.0
     if not peaks:
-        return []
+        return [], 0.0
+    med = float(np.median(list(scores.values()))) if scores else 0.0
+    confidence = (round(float(max(scores[p] for p in peaks) / med), 3)
+                  if med > 0 else 0.0)
     top = max(float(scores[p]) for p in peaks) or 1.0
     out = []
     for midi in peaks:
@@ -129,7 +151,7 @@ def polyphony_candidates(samples, sr, n=5):
                 "score_norm": round(float(scores[midi]) / top, 4),
             }
         )
-    return out
+    return out, confidence
 
 
 def main(argv=None):
@@ -166,13 +188,17 @@ def main(argv=None):
     from . import audio_io, chladni, phonetics as _phon, spectrotemporal
     from .cochlea import Cochlea
     from .gallery import SoundGallery
-    from .perceive import describe, note_detail, region_word
+    from .perceive import describe, gate, note_detail, region_word
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "images").mkdir(exist_ok=True)
 
-    samples, sr = load_wav(args.wav)
+    try:
+        samples, sr = load_wav(args.wav)
+    except Exception as e:
+        print(f"error: cannot read {args.wav}: {e}", file=sys.stderr)
+        return 2
     duration = len(samples) / sr if sr else 0.0
     cochlea = Cochlea(sr=sr)
     percepts = []
@@ -182,7 +208,9 @@ def main(argv=None):
         percepts.append(cochlea.hear_block(block, t))
         t += dt
     if not percepts:
-        print(json.dumps({"available": False}))
+        print(f"error: {args.wav} is too short: {len(samples)} samples, "
+              f"need at least one {cochlea.block}-sample block",
+              file=sys.stderr)
         return 1
 
     # Read-only gallery, if present. Never writes. The gallery is chosen by
@@ -206,8 +234,17 @@ def main(argv=None):
             continue
         t_start = float(seg[0].t)
         t_end = float(seg[-1].t + dt)
-        voiced = [p.f0 for p in seg if p.f0 > 0]
-        f0 = float(np.median(voiced)) if voiced else 0.0
+        # The segment's raw samples: the gate judges silence on them,
+        # and the oscilloscope / harmonic channels below read them.
+        s0 = int(t_start * sr)
+        s1 = int(min(len(samples), t_end * sr))
+        wseg = samples[s0:s1] if s1 > s0 else np.array([0.0], dtype=np.float32)
+        seg_rms = float(np.sqrt(np.mean(wseg ** 2))) if wseg.size else 0.0
+        # The same tonal / silent / voiced-share gate the Ear uses
+        # (perceive.gate): one code path describes every sound, so a
+        # chord reads tonal and silence reads silence here too.
+        g = gate(seg, rms=seg_rms)
+        f0 = g["f0"]
         loud = float(np.mean([p.loud for p in seg]))
         cen = float(np.median([p.centroid for p in seg]))
         mid = float(np.median([p.mid for p in seg]))
@@ -249,6 +286,9 @@ def main(argv=None):
             "onset_rate": onset_rate,
             "pitch_trend": pitch_trend,
             "loud_trend": loud_trend,
+            "tonal": g["tonal"],
+            "silent": g["silent"],
+            "flatness": round(g["flatness"], 3),
         }
         text = describe(agg)["text"]
 
@@ -295,19 +335,26 @@ def main(argv=None):
             "calibrate on real captures before trusting a name.",
         }
 
-        # Oscilloscope: raw amplitude vs time for this segment.
-        s0 = int(t_start * sr)
-        s1 = int(min(len(samples), t_end * sr))
-        wseg = samples[s0:s1] if s1 > s0 else np.array([0.0], dtype=np.float32)
-        hf, hm = harmonic_f0(wseg, sr)
+        # Harmonic stack and polyphony scan. A silent segment is
+        # skipped outright: on digital silence both scans only invent
+        # a pitch (they reported A0 at 27.5 Hz), so silence carries
+        # empty results and zero confidence.
+        if g["silent"]:
+            hf, hm, hconf = 0.0, 0, 0.0
+            candidates, pconf = [], 0.0
+        else:
+            hf, hm, hconf = harmonic_f0(wseg, sr)
+            candidates, pconf = polyphony_candidates(wseg, sr, n=5)
         seg_out["harmonic_f0_hz"] = hf
         seg_out["harmonic_midi"] = hm
+        seg_out["harmonic_confidence"] = hconf
         seg_out["polyphony"] = {
             "method": "Harmonic-stack scores MIDI 21-108, plus-or-minus one semitone "
             "non-maximum suppression, first 2 s of segment; candidate list only, "
             "not a replacement pitch.",
             "top_n": 5,
-            "candidates": polyphony_candidates(wseg, sr, n=5),
+            "confidence": pconf,
+            "candidates": candidates,
         }
         seg_out["octave_corrected"] = bool(hf and f0 and abs(hf - f0) / max(f0, 1) > 0.4)
         # Never silently replace AURIS text. "text" stays the original

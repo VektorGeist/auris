@@ -40,6 +40,47 @@ def note_detail(f0: float):
     return f"{NOTE_NAMES[midi % 12]}{midi // 12 - 1}", cents
 
 
+def gate(percepts, rms=None) -> dict:
+    """The tonal / silent / voiced-share gate, shared by every code path
+    that describes a sound (sense.Ear._aggregate and token_pack).
+
+    Takes the percepts of one sound or one segment, plus the raw RMS of
+    its samples when the caller has them, and returns:
+      tonal       median spectral flatness <= 0.3
+      silent      raw rms < 1e-4 (-80 dBFS: digital silence / a
+                  dead-quiet room window), judged on the raw signal,
+                  never on the auto-gained envelope; without rms,
+                  judged on the percepts' raw energies (90th
+                  percentile exactly 0)
+      flatness    the median spectral flatness
+      f0          the gated pitch (below)
+      frac_voiced share of frames carrying a pitch
+      voiced      the voiced frames' pitches themselves
+
+    The pitch stands when the frames that carry one are a real share of
+    a TONAL sound: on a tonal sound a voiced share of 0.15 already means
+    the pitched frames agree on a pitch, and gating them out at 0.3 made
+    near-identical hearings read as opposite descriptions (a tonal
+    passage at 0.25 voiced read "unpitched, noise-like" while its twin
+    at 0.31 read "a pitched tone"). On a non-tonal sound the voiced list
+    is empty by construction, so noise gets no pitch: a flat spectrum
+    is noise/percussion, not a pitch, even when a peak-picker fires on
+    a spiky noise bin.
+    """
+    flatness = float(np.median([p.flatness for p in percepts]))
+    if rms is not None:
+        silent = bool(rms < 1e-4)
+    else:
+        energies = np.array([p.energy for p in percepts], dtype=np.float32)
+        silent = bool(float(np.percentile(energies, 90)) == 0.0)
+    tonal = flatness <= 0.3
+    voiced = [p.f0 for p in percepts if p.f0 > 0] if tonal else []
+    frac_voiced = len(voiced) / len(percepts)
+    f0 = float(np.median(voiced)) if frac_voiced >= 0.15 else 0.0
+    return {"tonal": tonal, "silent": silent, "flatness": flatness,
+            "f0": f0, "frac_voiced": frac_voiced, "voiced": voiced}
+
+
 def _loud_word(x):
     return ("silent" if x < 0.03 else "very quiet" if x < 0.12 else
             "quiet" if x < 0.3 else "moderate" if x < 0.6 else
@@ -99,6 +140,15 @@ def describe(agg: dict) -> dict:
             "silent": True,
             "mode": "features-to-text",
         }
+    if "tonal" not in agg:
+        # Fail safe: the tone/noise wording must come from the gate,
+        # never from a default. An agg without the gate's fields is a
+        # caller bug; say so instead of silently calling the sound
+        # "noise-like" (the token pack did exactly that for every
+        # chord and every silence before the paths were unified).
+        raise ValueError(
+            "describe() needs the gate fields: build agg with "
+            "perceive.gate() so it carries 'tonal' and 'silent'")
     note, cents = note_detail(agg["f0"])
     parts = []
     if note:
