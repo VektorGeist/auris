@@ -33,11 +33,14 @@ python -m auris.cli stats
 
 ## Chladni patterns (v0.2.0)
 
-Auris can now visualize sound as **Chladni figures** — the vibration patterns
-that form on a resonant plate. Integrated from SoundGarden's cymatics mode.
-
-Each figure is determined by the pitch and timbre at that moment: the same
-physics Beethoven felt through his jawbone when composing deaf.
+Auris models a square plate. `chladni.py` holds a fixed table of plate
+modes, each mode with its own resonant frequency, and a sound's whole
+spectrum excites them: each mode is weighted by the energy the spectrum
+carries near its frequency. The Chladni figure is the weighted mix of the
+excited mode shapes, and the weights are numbers the readout and the
+token pack carry. (An older mapping that picked one mode from pitch and
+brightness alone survives in the module, labelled as the visualization
+it is.)
 
 ```python
 from auris import Ear
