@@ -1,6 +1,6 @@
 """Auris — Vanta's deterministic, model-free sense of hearing.
 
-Sound -> tonotopic place map (the ear, via Soundgarden's FFT) -> structured text
+Sound -> tonotopic place map (the ear, via AURIS's own FFT) -> structured text
 (perception, Irix-style) -> episodic memory (hippocampus) -> recognition (gallery).
 No AI, no model: pure DSP + geometry + remembered exemplars. Afferent-only (AGM):
 it perceives and remembers, it never acts.

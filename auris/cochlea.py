@@ -1,6 +1,6 @@
 """The cochlea — the ear that lays sound out in space.
 
-Reuses Soundgarden's `Analyzer` for the smoothed feature vector (bass/mid/high/
+Uses AURIS's own `Analyzer` (in `audio_engine.py`) for the smoothed feature vector (bass/mid/high/
 loud/centroid/flux/f0) and ADDS the tonotopic place map: a log-frequency layout of
 the block's energy. Tonotopy is how the biological cochlea works — low pitch at one
 end, high at the other — so the place map IS "sound laid out in space", the thing
@@ -41,7 +41,7 @@ class Cochlea:
 
     def __init__(self, sr: int = SR, block: int = BLOCK, n_place: int = N_PLACE):
         self.sr, self.block, self.n_place = sr, block, n_place
-        audio = _ear.soundgarden_audio()
+        audio = _ear.ear_audio()
         self.analyzer = audio.Analyzer(sr=sr, block=block)        # the ear
         self.window = np.hanning(block).astype(np.float32)
         self.freqs = np.fft.rfftfreq(block, 1.0 / sr)
@@ -70,7 +70,7 @@ class Cochlea:
         if len(b) < self.block:
             b = np.pad(b, (0, self.block - len(b)))
         b = b[: self.block]
-        f = self.analyzer.analyze(b)                              # soundgarden
+        f = self.analyzer.analyze(b)                              # the ear
         place, energy, flatness = self._place_map(b)
         return Percept(t=t, bass=f.bass, mid=f.mid, high=f.high, loud=f.loud,
                        centroid=f.centroid, flux=f.flux, f0=f.f0,
