@@ -1,19 +1,29 @@
 [project]
-name = "neuntauris"
+name = "auris"
 version = "0.3.0"
-description = "Vanta's deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
+description = "A deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
+readme = "README.md"
 requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+keywords = ["audio", "dsp", "signal-processing", "machine-hearing", "tonotopy", "numpy"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = ["numpy"]
-# The ear is AURIS's own audio engine, in auris/audio_engine.py inside this package.
-# Irix is optional — only the render-then-read mode uses it, and only if present.
 
 [project.optional-dependencies]
 dev = ["pytest"]
-mic = ["sounddevice"]   # live-microphone ear (PortAudio); core is stdlib+numpy
-images = ["Pillow"]     # token-pack and labeled images only; core is numpy-only
+mic = ["sounddevice"]
 
 [project.scripts]
 auris = "auris.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/VektorGeist/auris"
+Repository = "https://github.com/VektorGeist/auris"
 
 [build-system]
 requires = ["setuptools>=61"]

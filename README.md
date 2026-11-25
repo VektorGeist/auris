@@ -1,55 +1,70 @@
-# Auris — a deterministic sense of hearing
+# Auris: a deterministic sense of hearing
 
-Auris gives an agent the **concept of hearing** without any AI model. It is how the
-brain actually does it: the ear does not record sound, it **lays it out in space**
-(the cochlea is a physical frequency map — tonotopy). Auris turns sound into a
-spatial field, reads that field into **structured text** a text-brain can reason on,
-remembers what it hears, and learns to name it. Pure DSP + geometry + remembered
-exemplars. Sibling to **Irix** (the eyes).
+Version 0.3.0. License: Apache-2.0. Python 3.9 or later. Dependency: numpy.
 
-## The organism (model-free end to end)
+Auris turns sound into a spatial field, reads that field into structured
+text, remembers what it hears, and recognises remembered sounds. Every
+stage is signal processing, geometry, and remembered exemplars. No AI
+model is called anywhere in the package.
 
-| Organ | Module | What it does |
-|---|---|---|
-| Ear | `cochlea.py` (+ its own `Analyzer` in `audio_engine.py`) | sound → features + a **tonotopic place map** (sound in space) |
-| Perception | `perceive.py` (Irix idiom) | field → **structured text** — `features` mode (fast) or `render` mode (see-then-read) |
-| Hippocampus | `hippocampus.py` | **episodic memory**: bind → hold → consolidate (replay) → recall (pattern completion) |
-| Recognition | `gallery.py` | a growing store of remembered sounds → names by nearest-neighbour ("no ceiling = memory") |
+## Install
 
-Wired **afferent-only** (AGM): Auris perceives and remembers, it never acts.
+```bash
+pip install .
+```
 
-## Try it
+Optional extras: `pip install .[dev]` for the test suite, `pip install
+.[mic]` for live microphone capture.
+
+## Modules
+
+| Module | What it does |
+|---|---|
+| `audio_engine.py` | Feature extraction: band energies (bass, mid, high), loudness, spectral centroid, spectral flux, and fundamental frequency per frame |
+| `cochlea.py` | Tonotopic place map: 32 places on a log-frequency layout from 20 Hz to 16,000 Hz, per-frame place energies, raw energy, and spectral flatness |
+| `audio_io.py` | WAV read and write, and block iteration, using the standard library wave module |
+| `render.py` | Builds the spatial field (frequency by time, weighted by loudness), saves it as a PGM image, and reads it back into numbers |
+| `chladni.py` | Square plate model: a fixed table of 78 modes, each with its own resonant frequency, weighted by the energy a sound's whole spectrum carries near that frequency |
+| `spectrotemporal.py` | A 24-step by 32-place auditory image of a sound's trajectory over time, matched by dynamic time warping |
+| `perceive.py` | Turns the field into structured text: note names with signed cents, loudness and brightness words, and frequency region words |
+| `sense.py` | The whole sense wired together: capture, cochlea, aggregation, perception, gallery recognition, and episodic memory |
+| `hippocampus.py` | Episodic memory: imprint, consolidation (salience at least 0.5, or at least 3 repeats within duplicate distance 0.1), and pattern-completion recall |
+| `gallery.py` | Recognition against remembered sounds, by tonotopic descriptor and by spectrotemporal trajectory |
+| `calibrate.py` | Sets recognition thresholds from measured separation between labelled exemplars |
+| `phonetics.py` | Phonetic features per frame: voicing, vowel, fricative, plosive and nasal fractions, and voice onset time |
+| `formants.py` | Formant tracking: the lowest resonant peaks (F1, F2, F3) per frame |
+| `words.py` | A remembered store of spoken-word sound-forms, matched by trajectory distance |
+| `token_pack.py` | Assembles one token pack per audio file, one block per time segment |
+| `polyphony.py` | Multi-pitch candidate list: harmonic-stack scores for MIDI 21 to 108, top 5 |
+| `labeled_images.py` | Draws labels and scales onto token pack images, written alongside the originals |
+| `tones.py` | Deterministic synthetic sounds, generated with numpy and seeded noise |
+| `listen.py` | Live microphone capture through an optional sounddevice backend |
+| `cli.py` | Command line interface |
+
+The pitch path reads one dominant pitch at a time. Pitch search runs
+from 20 Hz to 5,000 Hz on a zero-padded 16,384-point FFT. All 88 piano
+keys, A0 to C8, return correctly named pitches.
+
+## Use
 
 ```bash
 python -m auris.cli tone --kind tone --freq 440 --dur 1 --out a.wav
-python -m auris.cli hear a.wav                 # perceive -> text + a memory
-python -m auris.cli hear a.wav --mode render   # see the sound, read it back
-python -m auris.cli remember a.wav "the A"     # name it
-python -m auris.cli hear a.wav                 # now recognised
-python -m auris.cli recall a.wav               # what earlier sounds it resembles
-python -m auris.cli consolidate                # replay salient/repeated -> long-term
+python -m auris.cli hear a.wav
+python -m auris.cli hear a.wav --mode render
+python -m auris.cli remember a.wav "the A"
+python -m auris.cli recall a.wav
+python -m auris.cli consolidate
 python -m auris.cli stats
 ```
 
-## Chladni patterns (v0.2.0)
-
-Auris models a square plate. `chladni.py` holds a fixed table of plate
-modes, each mode with its own resonant frequency, and a sound's whole
-spectrum excites them: each mode is weighted by the energy the spectrum
-carries near its frequency. The Chladni figure is the weighted mix of the
-excited mode shapes, and the weights are numbers the readout and the
-token pack carry. (An older mapping that picked one mode from pitch and
-brightness alone survives in the module, labelled as the visualization
-it is.)
+## Chladni patterns
 
 ```python
 from auris import Ear
 
 ear = Ear()
-# From audio samples
 figures = ear.chladni(samples, sr, size=128)
 
-# From a WAV file
 figures = ear.chladni_file("song.wav", size=128, as_images=True)
 ```
 
@@ -58,35 +73,19 @@ Or use the module directly:
 ```python
 from auris import chladni
 
-# Single figure for a mode (n, m)
 field = chladni.chladni_field(n=3, m=4, size=128)
 
-# Timeline from percepts
 figures = chladni.chladni_timeline(percepts)
 
-# Horizontal strip image
 strip = chladni.chladni_strip(percepts, size=128)
 ```
 
+Each mode (n, m) carries the resonant frequency 55 x (n^2 + m^2) Hz,
+spanning 55 Hz to 14,575 Hz, with a resonance width of 0.25 octaves.
+Mode weights are numbers, and they travel in the readout and in every
+token pack segment.
 
-## Token packs (v0.3.0)
-
-New in v0.3.0, as a wrapper around the unchanged core above:
-
-- **Harmonic pitch correction** (`auris/token_pack.py`, `harmonic_f0`):
-  a harmonic-stack pitch alongside the original AURIS f0. It fixes
-  octave errors where a harmonic is louder than the fundamental.
-  The original AURIS text is never replaced; when the harmonic
-  stack disagrees by more than 40%, a flagged `harmonic_note` field
-  is added alongside, not instead.
-- **Polyphony top-5 candidates** (`auris/polyphony.py`): harmonic-stack
-  candidates for MIDI 21-108, with plus-or-minus one semitone
-  non-maximum suppression. A candidate list only, not a clean voicing.
-- **Labeled images** (`auris/labeled_images.py`, Pillow optional):
-  Chladni images labeled with (n, m) and pitch, spectrograms with
-  Hz, time and dB axes, and waveforms with time, amplitude, peak
-  and RMS. Original PNGs are never overwritten; labeled versions
-  are written alongside as `*_labeled.png`.
+## Token packs
 
 ```bash
 python -m auris.token_pack input.wav --segments 20 --out out_dir
@@ -94,45 +93,38 @@ python -m auris.token_pack input.wav --segments 20 --out out_dir --no-images
 python -m auris.token_pack input.wav --segments 20 --out out_dir --labeled-images
 ```
 
-### Limits, plainly
+Each segment of a token pack carries: structured text; pitch, loudness,
+centroid, peak Hz, region, and trends; Chladni mode weights; a gallery
+match; polyphony candidates; and an oscilloscope waveform channel with
+peak, RMS, and zero crossings per segment, plus a waveform image.
 
-- **Gallery names at the 0.35 default must not be trusted without
-  calibration.** On general, non-musical sounds the gallery
-  false-accepts: it names sounds it never heard. The default
-  threshold is a synthetic placeholder. No single threshold
-  generalises across clean piano renders, real instruments, and
-  noisy recordings, so no threshold is set by this package.
-- **Speech is prosody and manner cues only, not transcription.**
-  Phonetics reports voiced, vowel, fricative, plosive and nasal
-  fractions, formants and voice-onset time. It does not turn
-  speech into words.
-- **Polyphony candidates are not clean voicings.** Octave-below
-  duplicates can appear in the later slots, candidates fail on
-  noisy sounds, and sequential notes inside one window are not
-  recovered as a full set.
-- **Labeled (n, m) and Hz numbers come from JSON, not from reading
-  the pattern alone.** A Chladni pattern alone does not uniquely
-  identify (n, m); the label copies those numbers from the pack
-  onto the image. Spectrogram frequency ticks are interpolated on
-  the cochlea centre scale and are approximate, not a per-pixel
-  frequency measurement.
-- **The oscilloscope waveform is a separate channel, not an AURIS
-  internal.** AURIS does not use an oscilloscope. Waveform =
-  amplitude over time, Chladni = vibration shape, spectrogram =
-  frequency over time. Different views, neither replaces the other.
+## Measured values
+
+- Gallery match thresholds are set to the measured equal-error points
+  on synthetic exam sets: 0.0533 for trajectory matching, 0.0587 for
+  descriptor matching. They are not calibrated on real recordings.
+- On the synthetic exam sets, trajectory matching scored 84% and
+  descriptor matching 72% after the current cochlea build.
+- The test suite contains 45 tests.
+
+## Capabilities and limits
+
+- Speech output is phonetic features and a word verdict with cohort
+  confidence. It is not transcription.
+- Polyphony output is a candidate list of up to 5 pitches. It is not a
+  clean voicing, candidates fail on noisy sounds, and sequential notes
+  inside one window are not recovered as a full set.
+- Labels on Chladni and spectrogram images copy their numbers from the
+  pack data. A Chladni pattern alone does not uniquely identify its
+  mode numbers, and spectrogram frequency ticks are interpolated on
+  the cochlea centre scale.
+- The oscilloscope waveform is a token pack channel. The core ear does
+  not use an oscilloscope internally.
 
 ## Test
 
 ```bash
 python -m pytest tests/ -v
 ```
-
-## Rules
-
-- **No AI / no model, ever.** DSP + geometry + remembered exemplars only.
-- **Afferent-only** — a sense, not a controller.
-- Self-contained: the ear is AURIS's own audio engine, in `audio_engine.py` inside
-  this package; Irix (optional) reads the
-  rendered field in `render` mode. Auris owns the hippocampus and the sound gallery.
 
 Data lives in `~/.auris/` (override with `AURIS_DIR`).
