@@ -2,6 +2,7 @@
 name = "auris"
 version = "0.3.0"
 description = "A deterministic, model-free sense of hearing (sound -> tonotopic field -> structured text -> episodic memory)"
+authors = [{name = "VektorGeist", email = "vektorgeistllc@gmail.com"}]
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
@@ -17,6 +18,7 @@ dependencies = ["numpy"]
 [project.optional-dependencies]
 dev = ["pytest"]
 mic = ["sounddevice"]
+images = ["pillow"]
 
 [project.scripts]
 auris = "auris.cli:main"
