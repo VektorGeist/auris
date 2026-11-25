@@ -9,7 +9,7 @@ pip install .[dev]
 Pillow is required for the image tests:
 
 ```bash
-pip install pillow
+pip install .[images]
 ```
 
 ## Tests
@@ -18,8 +18,7 @@ pip install pillow
 python -m pytest tests/ -v
 ```
 
-The suite contains 45 tests. All tests must pass before a change is
-submitted.
+All tests must pass before a change is submitted.
 
 ## Pull requests
 
