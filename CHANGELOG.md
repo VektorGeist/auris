@@ -2,20 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Package author metadata: VektorGeist, vektorgeistllc@gmail.com.
+- The `images` optional dependency set (Pillow) is declared in the
+  package metadata.
+
 ### Fixed
 
-- One shared gate helper, `perceive.gate`, called by `sense.Ear`
-  and `token_pack`. Pack segments carry tonal, silent, and
-  flatness. `perceive.describe` raises an error when the gate
-  fields are missing.
-- Silent pack segments skip the harmonic stack and the polyphony
-  scan. Non-silent harmonic and polyphony outputs carry a
-  confidence: the top score against the median score of the
-  whole scan.
-- `labeled_images` labels from the modes list and skips a
-  segment with no modes.
-- A missing input file and a too-short clip print a one-line
-  error to stderr and exit non-zero.
+- Token pack runs on silent input no longer print a "Mean of empty
+  slice" warning from the formant means.
+- Image writes no longer pass a mode to `Image.fromarray`.
+- A token pack run with images requested and Pillow missing prints
+  that images were skipped and how to install Pillow, instead of
+  writing no images silently.
 
 ## v0.3.0
 
@@ -38,6 +38,25 @@
   peak and RMS.
 - Whole-file phonetics in the pack: manner-cue fractions, top
   cues, formant means, and voice-onset time.
+- Cochlea floor at 20 Hz. Pitch is searched from 20 Hz to
+  5,000 Hz on a zero-padded 16,384-point FFT and read with
+  parabolic interpolation.
+- Pitch readouts carry a note name and a signed cents value.
+
+### Fixed
+
+- One shared gate helper, `perceive.gate`, called by `sense.Ear`
+  and `token_pack`. Pack segments carry tonal, silent, and
+  flatness. `perceive.describe` raises an error when the gate
+  fields are missing.
+- Silent pack segments skip the harmonic stack and the polyphony
+  scan. Non-silent harmonic and polyphony outputs carry a
+  confidence: the top score against the median score of the
+  whole scan.
+- `labeled_images` labels from the modes list and skips a
+  segment with no modes.
+- A missing input file and a too-short clip print a one-line
+  error to stderr and exit non-zero.
 
 ### Dependencies
 
