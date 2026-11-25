@@ -2,12 +2,34 @@
 
 Version 0.3.0. License: Apache-2.0. Python 3.9 or later. Dependency: numpy.
 
+[![tests](https://github.com/VektorGeist/auris/actions/workflows/tests.yml/badge.svg)](https://github.com/VektorGeist/auris/actions/workflows/tests.yml)
+
 Auris turns sound into a spatial field, reads that field into structured
 text, remembers what it hears, and recognises remembered sounds. Every
 stage is signal processing, geometry, and remembered exemplars. No AI
 model is called anywhere in the package.
 
-## Install
+![Chladni figure of a 220 Hz chord](docs/images/chladni-figure.png)
+
+Sample output, from a generated 220 Hz chord:
+
+```bash
+python -m auris.cli tone --kind chord --freq 220 --dur 2 --out chord.wav
+python -m auris.cli hear chord.wav
+```
+
+> a pitched tone, E4 at 330.6 Hz (+5 cents from exact E4), very loud,
+> dark in timbre, energy centred around 336 Hz (low-mid), steady /
+> sustained, pitch falling, plate modes ringing strongest: (1,2) 0.52,
+> (0,2) 0.23, (0,3) 0.18.
+
+## Quick start
+
+```bash
+pip install git+https://github.com/VektorGeist/auris
+```
+
+Or from a clone of this repository:
 
 ```bash
 pip install .
@@ -97,6 +119,8 @@ Each segment of a token pack carries: structured text; pitch, loudness,
 centroid, peak Hz, region, and trends; Chladni mode weights; a gallery
 match; polyphony candidates; and an oscilloscope waveform channel with
 peak, RMS, and zero crossings per segment, plus a waveform image.
+
+![Labeled spectrogram from a token pack](docs/images/spectrogram-labeled.png)
 
 ## Measured values
 
