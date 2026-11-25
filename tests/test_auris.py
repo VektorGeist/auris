@@ -1,15 +1,14 @@
-"""Auris tests — determinism + the four organs, run on real synthetic audio."""
 import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # import auris in-tree
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from auris import tones, audio_io                     # noqa: E402
-from auris.sense import Ear                            # noqa: E402
-from auris.perceive import note_name                   # noqa: E402
+from auris import tones, audio_io
+from auris.sense import Ear
+from auris.perceive import note_name
 
 SR = tones.SR
 
@@ -37,10 +36,10 @@ def test_wav_roundtrip(tmp_path):
 def test_pitched_vs_noise(tmp_path):
     e = ear(tmp_path)
     r = e.hear_samples(tones.tone(440, 1.0), SR, imprint=False)
-    assert r["note"] is not None                       # a tone is pitched
-    assert 250 < r["perception"]["peak_hz"] < 800       # energy near 440
+    assert r["note"] is not None
+    assert 250 < r["perception"]["peak_hz"] < 800
     n = e.hear_samples(tones.noise(1.0, seed=1), SR, imprint=False)
-    assert n["note"] is None                            # noise is unpitched
+    assert n["note"] is None
 
 
 def test_determinism(tmp_path):
@@ -56,9 +55,9 @@ def test_gallery_recognises_and_discriminates(tmp_path):
     e = ear(tmp_path)
     e.hear_samples(tones.tone(440, 1.0), SR, remember_as="A4-tone", imprint=False)
     same = e.hear_samples(tones.tone(440, 1.0), SR, imprint=False)
-    assert same["recognised"] == "A4-tone"              # remembers what it heard
+    assert same["recognised"] == "A4-tone"
     diff = e.hear_samples(tones.tone(110, 1.0), SR, imprint=False)
-    assert diff["recognised"] != "A4-tone"              # a different sound is not
+    assert diff["recognised"] != "A4-tone"
 
 
 def test_hippocampus_recall(tmp_path):
@@ -67,18 +66,18 @@ def test_hippocampus_recall(tmp_path):
     e.hear_samples(tones.tone(880, 1.0), SR, t=2.0)
     e.hear_samples(tones.chord(dur=1.0), SR, t=3.0)
     cue = e.hear_samples(tones.tone(440, 1.0), SR, imprint=False)["descriptor"]
-    got = e.hippocampus.recall(cue, k=1)                # pattern completion
-    assert got and got[0]["note"] == "A4"               # nearest = the 440 (A4) episode
-    assert got[0]["dist"] < 0.05                         # a near-exact completion
+    got = e.hippocampus.recall(cue, k=1)
+    assert got and got[0]["note"] == "A4"
+    assert got[0]["dist"] < 0.05
 
 
 def test_hippocampus_consolidates_to_gallery(tmp_path):
     e = ear(tmp_path)
-    e.hear_samples(tones.tone(440, 1.5), SR, t=1.0)     # salient: loud + novel
+    e.hear_samples(tones.tone(440, 1.5), SR, t=1.0)
     out = e.consolidate(salience_thresh=0.5, repeat_thresh=99)
-    assert out["n"] >= 1                                 # replay promoted it
+    assert out["n"] >= 1
     r = e.hear_samples(tones.tone(440, 1.0), SR, imprint=False)
-    assert r["recognised"] is not None                  # now recognised long-term
+    assert r["recognised"] is not None
 
 
 def test_render_mode_runs(tmp_path):
@@ -86,7 +85,7 @@ def test_render_mode_runs(tmp_path):
     r = e.hear_samples(tones.sweep(dur=1.0), SR, mode="render", imprint=False)
     assert r["mode"] == "render-then-read"
     assert r["perception"]["peak_hz"] > 0
-    assert (Path(tmp_path) / "last_field.pgm").exists()  # the sound was made visible
+    assert (Path(tmp_path) / "last_field.pgm").exists()
 
 
 if __name__ == "__main__":

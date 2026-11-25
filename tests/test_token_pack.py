@@ -1,6 +1,3 @@
-"""Token pack tests — the pack describes sounds through the same gate
-as the Ear (perceive.gate), stays silent about silence, and fails
-cleanly on bad input."""
 import json
 import sys
 import wave
@@ -9,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # import auris in-tree
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from auris import token_pack as tp  # noqa: E402
+from auris import token_pack as tp
 
 SR = 44100
 
