@@ -9,19 +9,19 @@ text, remembers what it hears, and recognises remembered sounds. Every
 stage is signal processing, geometry, and remembered exemplars. No AI
 model is called anywhere in the package.
 
-![Chladni figure of a 220 Hz chord](docs/images/chladni-figure.png)
+![Chladni figure of a generated C major chord](docs/images/chladni-figure.png)
 
-Sample output, from a generated 220 Hz chord:
+Sample output, from a generated 440 Hz tone:
 
 ```bash
-python -m auris.cli tone --kind chord --freq 220 --dur 2 --out chord.wav
-python -m auris.cli hear chord.wav
+python -m auris.cli tone --kind tone --freq 440 --dur 2 --out note.wav
+python -m auris.cli hear note.wav
 ```
 
-> a pitched tone, E4 at 330.6 Hz (+5 cents from exact E4), very loud,
-> dark in timbre, energy centred around 336 Hz (low-mid), steady /
-> sustained, pitch falling, plate modes ringing strongest: (1,2) 0.52,
-> (0,2) 0.23, (0,3) 0.18.
+> a pitched tone, A4 at 440.0 Hz (-0 cents from exact A4), very loud,
+> dark in timbre, energy centred around 414 Hz (low-mid), steady /
+> sustained, plate modes ringing strongest: (0,3) 0.56, (1,3) 0.36,
+> (2,3) 0.04.
 
 ## Quick start
 
@@ -36,7 +36,8 @@ pip install .
 ```
 
 Optional extras: `pip install .[dev]` for the test suite, `pip install
-.[mic]` for live microphone capture.
+.[mic]` for live microphone capture, `pip install .[images]` for image
+and labeled-image output (Pillow).
 
 ## Modules
 
@@ -119,6 +120,19 @@ Each segment of a token pack carries: structured text; pitch, loudness,
 centroid, peak Hz, region, and trends; Chladni mode weights; a gallery
 match; polyphony candidates; and an oscilloscope waveform channel with
 peak, RMS, and zero crossings per segment, plus a waveform image.
+Labeled images require Pillow (the `images` extra); without it, a pack
+run prints that images were skipped.
+
+On a generated C major chord (C4, E4, G4), the base path reads one
+dominant pitch. The pack's polyphony candidates for one segment were:
+
+- G4, score 1.0
+- C3, score 0.97
+- C4, score 0.96
+- E4, score 0.94
+- G3, score 0.60
+
+Every candidate is one of the chord's three notes or an octave of one.
 
 ![Labeled spectrogram from a token pack](docs/images/spectrogram-labeled.png)
 
@@ -129,10 +143,13 @@ peak, RMS, and zero crossings per segment, plus a waveform image.
   descriptor matching. They are not calibrated on real recordings.
 - On the synthetic exam sets, trajectory matching scored 84% and
   descriptor matching 72% after the current cochlea build.
-- The test suite contains 45 tests.
 
 ## Capabilities and limits
 
+- The gallery can return a name for a sound it was never taught. In a
+  retest on untaught sounds, the descriptor matcher accepted 2 of 6 as
+  known at the shipped thresholds; the trajectory matcher rejected
+  all 6.
 - Speech output is phonetic features and a word verdict with cohort
   confidence. It is not transcription.
 - Polyphony output is a candidate list of up to 5 pitches. It is not a
