@@ -124,6 +124,16 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "images").mkdir(exist_ok=True)
 
+    if not args.no_images:
+        try:
+            import PIL
+        except ImportError:
+            print(
+                "Pillow is not installed; images were skipped. "
+                "Install with: pip install auris[images]",
+                file=sys.stderr,
+            )
+
     try:
         samples, sr = load_wav(args.wav)
     except Exception as e:
@@ -335,7 +345,7 @@ def main(argv=None):
                 from PIL import Image
 
                 field = chladni.plate_field(seg_weights, size=128)
-                img = Image.fromarray((field * 255).astype(np.uint8), mode="L")
+                img = Image.fromarray((field * 255).astype(np.uint8))
                 p = out_dir / "images" / f"seg{i:02d}_chladni.png"
                 img.save(p)
                 seg_out["chladni_image"] = str(p.name)
@@ -350,7 +360,7 @@ def main(argv=None):
                     else np.full(spec_field.shape, -80)
                 )
                 norm = ((db + 80) / 80 * 255).astype(np.uint8)
-                simg = Image.fromarray(norm, mode="L")
+                simg = Image.fromarray(norm)
                 sp = out_dir / "images" / f"seg{i:02d}_spectrogram.png"
                 simg.save(sp)
                 seg_out["spectrogram_image"] = str(sp.name)
@@ -380,8 +390,8 @@ def main(argv=None):
             or "no manner cue above 5%",
             "auris_summarize_original": _phon.summarize(_feats),
             "formants_mean_hz": [
-                round(float(x), 1) if not np.isnan(x) else None
-                for x in np.nanmean(_ftrack, axis=0)
+                round(float(np.nanmean(col)), 1) if np.isfinite(col).any() else None
+                for col in _ftrack.T
             ]
             if _ftrack.size
             else [],

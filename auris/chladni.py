@@ -99,7 +99,7 @@ def chladni_timeline(percepts, size: int = 128, as_images: bool = False):
         field = percept_to_chladni(p, size)
         if as_images and _HAS_PIL:
             img_arr = (field * 255).astype(np.uint8)
-            img = Image.fromarray(img_arr, mode='L')
+            img = Image.fromarray(img_arr)
             rgb = Image.new('RGB', (size, size), (10, 10, 25))
             white = Image.new('RGB', (size, size), (220, 200, 255))
             rgb.paste(white, (0, 0), img)
