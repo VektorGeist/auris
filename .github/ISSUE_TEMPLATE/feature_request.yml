@@ -1,0 +1,18 @@
+name: Feature request
+description: Request a capability the package does not have
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: capability
+    attributes:
+      label: Capability requested
+      description: What the package should do that it does not do now
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: Use case
+      description: The task the capability serves
+    validations:
+      required: true
