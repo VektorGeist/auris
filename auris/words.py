@@ -1,14 +1,4 @@
-"""Word lexicon — a remembered store of spoken-word sound-forms.
-
-The brain keeps an "auditory lexicon": a catalog of the sound-shapes of words it
-has heard, and recognises a new utterance by matching it to that memory (not by a
-trained classifier). This is Auris's gallery idiom applied to WORDS: each exemplar
-is a T x F spectrotemporal trajectory (spectrotemporal.trajectory), matched by DTW.
-More exemplars per word -> strictly better recognition; no model, no ceiling.
-
-Storage mirrors SoundGallery exactly (zip of <id>.npy + <id>.json) so the on-disk
-idiom is shared; the payload is a 2-D trajectory instead of a 1-D histogram.
-"""
+"""A remembered store of spoken-word sound-forms, matched by trajectory distance."""
 from __future__ import annotations
 
 import io
@@ -23,12 +13,11 @@ import numpy as np
 
 from .spectrotemporal import dtw, dtw_pitch_invariant
 
-# Measured on real captures via calibrate.py; synthetic placeholder until then.
+
 DEFAULT_WORD_DIST = float(os.environ.get("AURIS_WORD_DIST", "0.20"))
 
 
 class WordLexicon:
-    """Append-only zip of remembered word trajectories; cached for matching."""
 
     def __init__(self, path):
         self.path = str(path)
@@ -65,7 +54,6 @@ class WordLexicon:
             self._cache[eid] = {**meta, "traj": np.asarray(traj, dtype=np.float32)}
 
     def remember(self, traj, name: str, n_frames: int = 0, meta: dict | None = None) -> str:
-        """Store one word exemplar's trajectory under `name`. Returns entry id."""
         eid = uuid.uuid4().hex
         m = {"name": name, "ts": time.time(), "n_frames": int(n_frames)}
         if meta:
@@ -75,12 +63,6 @@ class WordLexicon:
 
     def match(self, traj, threshold: float | None = None, band=None,
               pitch_invariant: bool = False, max_shift: int = 4) -> dict:
-        """Nearest remembered word by minimum DTW; per-name best distances too.
-
-        pitch_invariant=True matches modulo a bounded tonotopic shift (the Hodos pitch/shift
-        quotient) so the same word at a different pitch still recognizes — closing the documented
-        pitch-sensitivity limit. Opt-in; default keeps the exact prior behaviour.
-        """
         thr = DEFAULT_WORD_DIST if threshold is None else threshold
         best_name, best = None, float("inf")
         per_name: dict = {}

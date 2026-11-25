@@ -1,12 +1,4 @@
-"""Calibration — set the word-recognition threshold from REAL separation, not a guess.
-
-The lexicon's DEFAULT_WORD_DIST starts as a synthetic placeholder (same status the
-gallery's 0.35 had). This measures it honestly: take labelled exemplars, compute
-DTW for every SAME-word pair and every DIFFERENT-word pair, and pick the threshold
-that best separates the two distributions (the equal-error / crossover point). If
-the distributions don't overlap, recognition is trustworthy; if they do, the report
-says so plainly instead of hiding it behind a made-up number.
-"""
+"""Sets recognition thresholds from measured separation between labelled exemplars."""
 from __future__ import annotations
 
 import os
@@ -19,7 +11,6 @@ from .spectrotemporal import trajectory, dtw
 
 
 def _trajs_from_dir(ear, directory):
-    """Load `<word>_<take>.wav` files -> {word: [traj, ...]} via the ear's front end."""
     by_word: dict = {}
     for p in sorted(Path(directory).glob("*.wav")):
         word = p.stem.split("_")[0]
@@ -30,7 +21,6 @@ def _trajs_from_dir(ear, directory):
 
 
 def separation(by_word: dict, band=None) -> dict:
-    """Compute same- vs different-word DTW distributions and a threshold."""
     same, diff = [], []
     words = list(by_word)
     for w in words:
@@ -47,18 +37,18 @@ def separation(by_word: dict, band=None) -> dict:
     if same.size == 0 or diff.size == 0:
         return {"ok": False, "reason": "need >=2 takes of >=2 words",
                 "n_same": int(same.size), "n_diff": int(diff.size)}
-    # threshold: midpoint of the gap if separable, else equal-error crossover
+
     hi_same, lo_diff = float(same.max()), float(diff.min())
     separable = hi_same < lo_diff
     if separable:
         thr = 0.5 * (hi_same + lo_diff)
     else:
-        # scan candidate thresholds, minimize (false-accept + false-reject)
+
         cands = np.unique(np.concatenate([same, diff]))
         best_thr, best_err = float(cands[0]), 1e9
         for c in cands:
-            fr = float((same > c).mean())     # same-word wrongly rejected
-            fa = float((diff <= c).mean())    # different-word wrongly accepted
+            fr = float((same > c).mean())
+            fa = float((diff <= c).mean())
             if fr + fa < best_err:
                 best_err, best_thr = fr + fa, float(c)
         thr = best_thr

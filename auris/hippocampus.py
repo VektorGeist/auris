@@ -1,19 +1,4 @@
-"""The hippocampus — episodic memory of what was heard.
-
-The gallery is recognition (semantic: "this sound is called X"). The hippocampus is
-the part that forms a memory of a MOMENT and later brings it back:
-
-  encode / bind   imprint(): pack (percept + tonotopic signature + time + context)
-                  into an episode with a sparse pattern-separation key (similar
-                  moments stay distinguishable).
-  hold            recent(): a buffer of recent, full-detail episodes.
-  consolidate     consolidate(): replay — promote salient or repeated episodes into
-                  the durable gallery; the rest simply age in the log.
-  recall          recall(): pattern completion — nearest stored episodes to a partial
-                  or whole cue signature.
-
-Deterministic, model-free, stdlib + numpy. Persisted as JSONL under ~/.auris.
-"""
+"""Episodic memory of heard sounds: imprint, consolidation, and pattern-completion recall."""
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +11,7 @@ import numpy as np
 
 from .gallery import chi2
 
-_DUP_DIST = 0.1              # descriptors closer than this count as "the same sound"
+_DUP_DIST = 0.1
 
 
 class Hippocampus:
@@ -49,19 +34,17 @@ class Hippocampus:
                     d["desc"] = np.asarray(d["desc"], dtype=np.float32)
                     eps.append(d)
                 except Exception:
-                    continue                # skip a corrupt line, don't crash recall
+                    continue
         return eps
 
     @staticmethod
     def _sep_key(desc) -> str:
-        """Pattern-separation key: a distinct bucket from the tonotopic shape."""
         top = int(np.argmax(desc))
         h = hashlib.sha1(np.round(desc, 2).tobytes()).hexdigest()[:8]
         return f"{top:02d}-{h}"
 
     def imprint(self, desc, summary: str, context: str = "", salience: float = 0.0,
                 source: str = "", t: float | None = None, note=None) -> str:
-        """Bind one percept into an episode and store it. Returns the episode id."""
         t = time.time() if t is None else float(t)
         desc = np.asarray(desc, dtype=np.float32)
         ep = {"id": uuid.uuid4().hex, "t": t, "summary": summary, "context": context,
@@ -74,7 +57,6 @@ class Hippocampus:
         return ep["id"]
 
     def recall(self, cue_desc, k: int = 3) -> list:
-        """Pattern completion: the k nearest stored episodes to a cue signature."""
         cue = np.asarray(cue_desc, dtype=np.float32)
         scored = sorted(((chi2(cue, e["desc"]), e) for e in self.episodes),
                         key=lambda x: x[0])
@@ -88,8 +70,6 @@ class Hippocampus:
 
     def consolidate(self, gallery, salience_thresh: float = 0.5,
                     repeat_thresh: int = 3, name: str | None = None) -> dict:
-        """Replay: promote salient OR repeated unconsolidated episodes into the
-        gallery (long-term recognition). The rest just age in the log."""
         promoted = []
         for e in [x for x in self.episodes if not x.get("consolidated")]:
             repeats = sum(1 for o in self.episodes

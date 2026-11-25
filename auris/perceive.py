@@ -1,12 +1,4 @@
-"""Perception — turn the ear's field into structured TEXT a text-brain reasons on.
-
-Mirrors Irix's `physics.physical_description` idiom: a neutral, model-free account.
-Two modes:
-  - describe()        features-to-text: percept straight from the sound's numbers.
-  - describe_render() render-then-read: build the spatial field image, then read
-                      THAT back into text (proves "seeing IS hearing"), optionally
-                      via Irix. Both are deterministic and model-free.
-"""
+"""Turns the ear's field into structured text."""
 from __future__ import annotations
 
 import math
@@ -24,14 +16,6 @@ def note_name(f0: float):
 
 
 def note_detail(f0: float):
-    """(note name, cents from that exact note) for a pitch, or (None, None).
-
-    The readout carries note identity in this form — the precise pitch, the
-    nearest note's name, and the signed distance from that note in cents —
-    so a reader can tell neighbouring keys apart from the readout itself
-    wherever the ear measured a pitch. The place line never could: 32
-    places serve 88 keys, so neighbours share a place reading by design.
-    """
     if not f0 or f0 <= 0:
         return None, None
     midi = int(round(69 + 12 * math.log2(f0 / 440.0)))
@@ -41,32 +25,6 @@ def note_detail(f0: float):
 
 
 def gate(percepts, rms=None) -> dict:
-    """The tonal / silent / voiced-share gate, shared by every code path
-    that describes a sound (sense.Ear._aggregate and token_pack).
-
-    Takes the percepts of one sound or one segment, plus the raw RMS of
-    its samples when the caller has them, and returns:
-      tonal       median spectral flatness <= 0.3
-      silent      raw rms < 1e-4 (-80 dBFS: digital silence / a
-                  dead-quiet room window), judged on the raw signal,
-                  never on the auto-gained envelope; without rms,
-                  judged on the percepts' raw energies (90th
-                  percentile exactly 0)
-      flatness    the median spectral flatness
-      f0          the gated pitch (below)
-      frac_voiced share of frames carrying a pitch
-      voiced      the voiced frames' pitches themselves
-
-    The pitch stands when the frames that carry one are a real share of
-    a TONAL sound: on a tonal sound a voiced share of 0.15 already means
-    the pitched frames agree on a pitch, and gating them out at 0.3 made
-    near-identical hearings read as opposite descriptions (a tonal
-    passage at 0.25 voiced read "unpitched, noise-like" while its twin
-    at 0.31 read "a pitched tone"). On a non-tonal sound the voiced list
-    is empty by construction, so noise gets no pitch: a flat spectrum
-    is noise/percussion, not a pitch, even when a peak-picker fires on
-    a spiky noise bin.
-    """
     flatness = float(np.median([p.flatness for p in percepts]))
     if rms is not None:
         silent = bool(rms < 1e-4)
@@ -99,8 +57,6 @@ def region_word(hz):
 
 
 def describe_word(cohort, phon_summary=None, vot=None) -> str:
-    """A model-free read of a word percept: nearest match, how close, what it's made
-    of phonetically, and (if a plosive) its voice-onset-time category."""
     parts = []
     if cohort:
         top = cohort[0]
@@ -119,11 +75,9 @@ def describe_word(cohort, phon_summary=None, vot=None) -> str:
 
 
 def describe(agg: dict) -> dict:
-    """features-to-text account of an aggregated percept."""
     if agg.get("silent"):
-        # Explicit silence: no pitch, no timbre, no energy centre. Before this
-        # guard, a silent input was described as "an unpitched, noise-like
-        # sound ... energy centred around 44 Hz" — a claim about nothing.
+
+
         return {
             "text": "silence.",
             "note": None,
@@ -141,11 +95,8 @@ def describe(agg: dict) -> dict:
             "mode": "features-to-text",
         }
     if "tonal" not in agg:
-        # Fail safe: the tone/noise wording must come from the gate,
-        # never from a default. An agg without the gate's fields is a
-        # caller bug; say so instead of silently calling the sound
-        # "noise-like" (the token pack did exactly that for every
-        # chord and every silence before the paths were unified).
+
+
         raise ValueError(
             "describe() needs the gate fields: build agg with "
             "perceive.gate() so it carries 'tonal' and 'silent'")
@@ -157,10 +108,8 @@ def describe(agg: dict) -> dict:
     elif agg.get("onset_rate", 0) >= 1.5:
         parts.append("an unpitched, percussive sound")
     elif agg.get("tonal"):
-        # The sound's own flatness says tonal: with no single pitch
-        # standing out it is an unpitched TONAL sound (a chord, a drone,
-        # a dense passage), never "noise-like" — that wording follows
-        # the flatness measurement, not the absence of a pitch.
+
+
         parts.append("an unpitched, tonal sound")
     else:
         parts.append("an unpitched, noise-like sound")
@@ -196,16 +145,10 @@ def describe(agg: dict) -> dict:
 
 
 def describe_render(percepts, agg, out_dir=None, want_irix=True) -> dict:
-    """render-then-read: build the field image and read it back into text.
-
-    The field is the tonotopic map over time (rows = frequency low->high, cols =
-    time) — literally a picture of the sound. The percept below is derived by
-    READING that picture, not from the raw numbers.
-    """
     from . import render as _render
 
-    field = np.array([p.place for p in percepts], dtype=np.float32).T  # freq x time
-    read = _render.read_field(field, agg["centers"])                  # image -> text
+    field = np.array([p.place for p in percepts], dtype=np.float32).T
+    read = _render.read_field(field, agg["centers"])
     note = note_name(read["peak_hz"])
     text = (f"seen as a field: brightest band at {read['peak_hz']:.0f} Hz "
             f"({region_word(read['peak_hz'])}"
@@ -218,7 +161,7 @@ def describe_render(percepts, agg, out_dir=None, want_irix=True) -> dict:
     if out_dir is not None:
         out["image"] = _render.save_field(field, out_dir)
         if want_irix and out.get("image"):
-            irix = _render.irix_read(out["image"])       # combine irix, if present
+            irix = _render.irix_read(out["image"])
             if irix:
                 out["irix"] = irix
     return out

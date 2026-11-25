@@ -1,4 +1,4 @@
-"""auris CLI — hear a sound, remember it, recall it, consolidate memory.
+"""auris CLI: hear a sound, remember it, recall it, consolidate memory.
 
   auris hear FILE [--mode features|render] [--remember NAME] [--context STR]
   auris remember FILE NAME
@@ -31,7 +31,7 @@ def _print(obj):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="auris", description="Vanta's deterministic sense of hearing")
+    ap = argparse.ArgumentParser(prog="auris", description="A deterministic sense of hearing")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     h = sub.add_parser("hear", help="perceive a WAV into structured text + a memory")
@@ -170,14 +170,12 @@ def main(argv=None) -> int:
 
 
 def _dev(d):
-    """A --device arg may be a numeric index or a name substring."""
     if d is None:
         return None
     return int(d) if str(d).isdigit() else d
 
 
 def _clean(d: dict) -> dict:
-    """Drop the raw descriptor/trajectory arrays from CLI output (keep it readable)."""
     return {k: v for k, v in d.items() if k not in ("descriptor", "trajectory")}
 
 

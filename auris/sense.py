@@ -1,9 +1,4 @@
-"""Ear — the whole sense wired together.
-
-capture -> cochlea (ear) -> aggregate -> perceive (text) -> gallery (recognise) ->
-hippocampus (form an episodic memory). Afferent-only: hearing perceives and
-remembers; it never acts.
-"""
+"""The whole sense wired together: capture, cochlea, aggregation, perception, gallery recognition, and episodic memory."""
 from __future__ import annotations
 
 import os
@@ -25,7 +20,6 @@ def _data_dir(d=None) -> Path:
 
 
 class Ear:
-    """Vanta's sense of hearing over a persistent memory store."""
 
     def __init__(self, data_dir=None):
         self.dir = _data_dir(data_dir)
@@ -34,9 +28,9 @@ class Ear:
         self.hippocampus = Hippocampus(self.dir / "episodes.jsonl")
         self.words = WordLexicon(self.dir / "words.zip")
 
-    # --- transduce + aggregate --------------------------------------------------
+
     def _transduce(self, samples, sr):
-        cochlea = Cochlea(sr=sr)                     # built for this clip's rate
+        cochlea = Cochlea(sr=sr)
         dt = cochlea.block / cochlea.sr
         percepts, t = [], 0.0
         for block in audio_io.blocks(samples, cochlea.block):
@@ -45,7 +39,7 @@ class Ear:
         return percepts, cochlea
 
     def _aggregate(self, percepts, cochlea, rms=None) -> dict:
-        P = np.array([p.place for p in percepts], dtype=np.float32)     # F x N
+        P = np.array([p.place for p in percepts], dtype=np.float32)
         place = np.median(P, axis=0)
         s = float(place.sum())
         place = (place / s if s > 0 else place).astype(np.float32)
@@ -53,9 +47,8 @@ class Ear:
         loud = float(np.percentile(louds, 90))
         energies = np.array([p.energy for p in percepts], dtype=np.float32)
         centroid = float(np.median([p.centroid for p in percepts]))
-        # The tonal / silent / voiced-share gate lives in perceive.gate,
-        # shared with token_pack so the two describing paths cannot
-        # drift apart again.
+
+
         _g = perceive.gate(percepts, rms=rms)
         silent = _g["silent"]
         flatness = _g["flatness"]
@@ -74,9 +67,8 @@ class Ear:
             a, b = np.median(voiced[:k]), np.median(voiced[-k:])
             pitch_trend = ("rising" if b > a * 1.03 else
                            "falling" if b < a * 0.97 else "steady")
-        # Loudness trend from RAW per-frame energy, not the envelope `loud`:
-        # the envelope's auto-gain peak decays and its attack ramps, so a
-        # perfectly steady tone read as "swelling". Raw energy is immune.
+
+
         ek = max(1, len(energies) // 3)
         ea, eb = float(energies[:ek].mean()), float(energies[-ek:].mean())
         loud_trend = ("swelling" if eb > ea * 1.15 else
@@ -97,12 +89,9 @@ class Ear:
                 "centers": cochlea.centers}
 
     def _trajectory(self, percepts, extra=None):
-        """Time-resolved descriptor (T x F) over the voiced span — keeps the
-        trajectory the median `_aggregate` collapses. `extra` = optional per-frame
-        phonetic features (Layer B) concatenated on."""
         return spectrotemporal.trajectory(percepts, extra=extra)
 
-    # --- the sense ---------------------------------------------------------------
+
     def hear_samples(self, samples, sr, mode="features", context="",
                      remember_as=None, t=None, imprint=True,
                      word=False, word_as=None, phon=False) -> dict:
@@ -142,7 +131,7 @@ class Ear:
                "sr": int(sr), "frames": len(percepts), "mode": p["mode"],
                "descriptor": desc}
 
-        # word path (opt-in): keep the trajectory, recognise/remember a word
+
         if word or word_as:
             traj = self._trajectory(percepts)
             if word_as:
@@ -170,23 +159,20 @@ class Ear:
         out["source"] = str(wav)
         return out
 
-    # --- words (time-resolved recognition) --------------------------------------
+
     def remember_word(self, wav, name: str) -> dict:
-        """Hear a WAV and store its trajectory as a named word exemplar."""
         sr, samples = audio_io.read_wav(str(wav))
         out = self.hear_samples(samples, sr, imprint=False, word_as=name)
         out["source"] = str(wav)
         return out
 
     def hear_word(self, wav, phon=True) -> dict:
-        """Hear a WAV and name it against the word lexicon (DTW, no model)."""
         sr, samples = audio_io.read_wav(str(wav))
         out = self.hear_samples(samples, sr, imprint=False, word=True, phon=phon)
         out["source"] = str(wav)
         return out
 
     def hear_words(self, samples, sr, phon=False) -> list:
-        """Segment a buffer into silence-bracketed utterances and name each word."""
         samples = np.asarray(samples, dtype=np.float32)
         spans = spectrotemporal.segment_utterances(samples, sr)
         results = []
@@ -198,11 +184,10 @@ class Ear:
             results.append(w)
         return results
 
-    # --- live microphone (the room, not a file) ---------------------------------
+
     def hear_mic(self, seconds=2.0, sr=None, device=None, gain=1.0,
                  mode="features", context="", remember_as=None, t=None,
                  imprint=True) -> dict:
-        """Capture `seconds` of live sound and perceive it like any WAV."""
         from . import listen
         sr, samples = listen.record(seconds, sr=sr, device=device, gain=gain)
         out = self.hear_samples(samples, sr, mode=mode, context=context,
@@ -212,13 +197,6 @@ class Ear:
 
     def listen_stream(self, window=2.0, sr=None, device=None, gain=1.0,
                       seconds=None, mode="features", context="", imprint=True):
-        """Generator: perceive the mic continuously, one `window` at a time.
-
-        Yields a hear_samples dict per window (afferent-only — only listens).
-        Stops after `seconds` of listening if given, else runs until the caller
-        breaks. Blocks with an audible descriptor are still yielded (silence is
-        a percept too); a window too short to transduce yields its {"error": ...}.
-        """
         from . import listen
         elapsed = 0.0
         for wsr, samples in listen.windows(window, sr=sr, device=device, gain=gain):
@@ -233,23 +211,16 @@ class Ear:
 
     def listen_words(self, window=1.0, sr=None, device=None, gain=1.0,
                      seconds=None, phon=False, _capture=None):
-        """Generator: hear WORDS live off the mic, one committed utterance at a time.
-
-        Captures windows (reusing listen.windows + the injectable _capture hook),
-        accumulates a buffer, and yields a word percept the moment an utterance is
-        fully bracketed by silence — so a word straddling a capture boundary isn't
-        split. Afferent-only. Stops after `seconds` if given, else until broken.
-        """
         from . import listen
         buf = np.zeros(0, dtype=np.float32)
-        emitted_to = 0            # sample index consumed so far
+        emitted_to = 0
         wsr = None
         elapsed = 0.0
         for csr, chunk in listen.windows(window, sr=sr, device=device, gain=gain,
                                          _capture=_capture):
             wsr = csr
             buf = np.concatenate([buf, np.asarray(chunk, dtype=np.float32)])
-            guard = int(0.3 * csr)        # require 0.3 s of room after a word to commit
+            guard = int(0.3 * csr)
             for (a, b) in spectrotemporal.segment_utterances(buf, csr):
                 if a >= emitted_to and b <= len(buf) - guard:
                     out = self.hear_samples(buf[a:b], csr, imprint=False,
@@ -258,8 +229,8 @@ class Ear:
                     w["t"] = round(a / csr, 3)
                     emitted_to = b
                     yield w
-            # bound memory: drop fully-consumed prefix
-            if emitted_to > csr:          # keep ~1 s of context before the cursor
+
+            if emitted_to > csr:
                 keep_from = max(0, emitted_to - csr)
                 buf = buf[keep_from:]
                 emitted_to -= keep_from
@@ -268,7 +239,7 @@ class Ear:
                 return
         _ = wsr
 
-    # --- memory ------------------------------------------------------------------
+
     def recall_file(self, wav, k=3) -> list:
         sr, samples = audio_io.read_wav(str(wav))
         percepts, cochlea = self._transduce(samples, sr)
@@ -285,37 +256,13 @@ class Ear:
                 "hippocampus": self.hippocampus.stats(),
                 "data_dir": str(self.dir)}
 
-    # --- chladni visualization ---------------------------------------------------
+
     def chladni(self, samples, sr, size=128, as_images=False):
-        """Generate Chladni figures from audio.
-
-        Uses SoundGarden's cymatics math (mode 1) to visualize the vibration
-        patterns in the sound. Each figure corresponds to a time block.
-
-        Args:
-            samples: audio samples (numpy array)
-            sr: sample rate
-            size: each figure's size in pixels
-            as_images: if True, return PIL Images; else numpy arrays
-
-        Returns:
-            List of Chladni figures, one per time block
-        """
         from . import chladni as _chladni
         percepts, _ = self._transduce(samples, sr)
         return _chladni.chladni_timeline(percepts, size=size, as_images=as_images)
 
     def chladni_file(self, wav, size=128, as_images=False):
-        """Generate Chladni figures from a WAV file.
-
-        Args:
-            wav: path to WAV file
-            size: each figure's size in pixels
-            as_images: if True, return PIL Images; else numpy arrays
-
-        Returns:
-            List of Chladni figures, one per time block
-        """
         from . import audio_io as _audio_io
         from . import chladni as _chladni
         sr, samples = _audio_io.read_wav(str(wav))

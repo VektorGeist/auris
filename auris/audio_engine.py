@@ -1,42 +1,26 @@
-"""AURIS's own audio engine - the ear, inside the package.
-
-Audio capture + feature extraction. Turns a mono audio block into a small
-feature vector: band energies (bass/mid/high), loudness, spectral centroid
-(timbre brightness), spectral flux (onset/rhythm), and fundamental frequency.
-Pure DSP - no model, no AI.
-
-This code was originally written for SoundGarden and has been moved into
-AURIS itself, so AURIS is self-contained: no sibling project, no file-path
-lookup, and no environment variable is needed to hear.
-
-Two sources:
-  - LiveSource: microphone via sounddevice (non-deterministic timing).
-  - FileSource: a WAV, yielded in fixed blocks (deterministic).
-"""
+"""Audio feature extraction: band energies, loudness, spectral centroid, spectral flux, and fundamental frequency from a mono audio block."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import numpy as np
 
-BLOCK = 2048          # samples per analysis frame
-SR = 44100            # sample rate
+BLOCK = 2048
+SR = 44100
 BANDS = {"bass": (20, 100), "mid": (200, 2000), "high": (5000, 20000)}
 
 
 @dataclass
 class Features:
-    """Normalized per-frame features, each roughly in 0..1."""
     bass: float = 0.0
     mid: float = 0.0
     high: float = 0.0
     loud: float = 0.0
-    centroid: float = 0.0   # spectral centroid / nyquist -> timbre brightness
-    flux: float = 0.0       # positive spectral flux -> onset strength
-    f0: float = 0.0         # fundamental freq (Hz), 0 if none
+    centroid: float = 0.0
+    flux: float = 0.0
+    f0: float = 0.0
 
 
 class Envelope:
-    """Per-feature attack/decay smoother + slow-decaying auto-gain to 0..1."""
 
     def __init__(self, attack=0.5, decay=0.08, gain_decay=0.999):
         self.attack, self.decay, self.gain_decay = attack, decay, gain_decay
@@ -52,18 +36,11 @@ class Envelope:
 
 
 class Analyzer:
-    """Stateful analyzer: feed mono float32 blocks, get smoothed Features."""
 
-    # The spectrum is computed on a zero-padded FFT: the raw 2048-point grid
-    # is 21.5 Hz wide, which at the bottom of the piano (A0 = 27.5 Hz, a
-    # semitone = 1.6 Hz) cannot locate a peak at all (A0 read 25.4 Hz and
-    # was named G#0). Padding to 16384 points samples the same windowed
-    # spectrum on a 2.7 Hz grid, fine enough for the peak interpolation to
-    # land inside a semitone across the whole range of the keys.
+
     NFFT = 16384
-    # Pitch search band: the full range of the keys, A0 (27.5 Hz) through
-    # C8 (4186 Hz), with margin. The old search stopped below 1000 Hz, so
-    # every key from C6 up returned no pitch at all.
+
+
     PITCH_LO, PITCH_HI = 20.0, 5000.0
 
     def __init__(self, sr=SR, block=BLOCK):
@@ -98,10 +75,8 @@ class Analyzer:
                        & (self.freqs <= self.PITCH_HI))[0]
         if idx.size and mag[idx].max(initial=0.0) > total * 0.02:
             k = int(idx[int(np.argmax(mag[idx]))])
-            # Parabolic interpolation around the peak bin, on the padded
-            # grid: recovers the peak's position between bins, which is
-            # what lets a 440 Hz tone read 439.3 Hz instead of 431 Hz and
-            # a 27.5 Hz tone read inside its own semitone at all.
+
+
             f.f0 = float(self._interp_peak(k, mag))
         return f
 
@@ -120,7 +95,6 @@ class Analyzer:
 
 
 def file_blocks(path: str, block=BLOCK):
-    """Yield fixed-size mono float32 blocks from a WAV — deterministic."""
     from scipy.io import wavfile
     sr, data = wavfile.read(path)
     was_int = np.issubdtype(data.dtype, np.integer)

@@ -1,35 +1,4 @@
-"""Add readable labels and scales to AURIS token-pack images.
-
-Original PNGs are never overwritten. Labeled versions are written
-alongside them as ``*_labeled.png``.
-
-What is drawn, and what is not claimed:
-- Chladni: "strongest mode n=X m=Y w=..." plus pitch in Hz and
-  note name, drawn as text. The pattern itself is unchanged
-  (upscaled with NEAREST so nodal lines stay crisp). The mode
-  numbers come from the modes list in token_pack.json, not from
-  reading the pattern. A segment whose modes list is empty
-  (silence excited no mode) gets no Chladni label. A vision model given the unlabeled
-  pattern alone still cannot uniquely identify (n, m) without a
-  reference chart; the label is what makes it readable.
-- Spectrogram: the original is (width x 32 places), row 0 = lowest
-  cochlea place. The labeled version is flipped vertically so low
-  frequencies are at the bottom (conventional orientation),
-  enlarged to 640x320, with a log frequency axis in Hz, a time axis
-  in seconds (segment start/end), and a dB legend (-80 to 0 dB,
-  white = loud). Frequency ticks are interpolated on the cochlea
-  centre scale for the pack sample rate when computable, otherwise
-  log ticks 50..8000 Hz; the axis is approximate, not a per-pixel
-  measurement.
-- Waveform: the original 320x128 line is copied (upscaled) from the
-  original PNG, so no new amplitude data are invented; peak and RMS
-  come from token_pack.json oscilloscope fields. The labeled version
-  adds a time axis (segment start/end, seconds), an amplitude axis
-  from -1.0 to +1.0, and peak/RMS values as text.
-
-Pillow is optional: these functions are only used when image output
-is requested, and they raise a clear error if Pillow is missing.
-"""
+"""Draws labels and scales onto token pack images and writes them alongside the originals."""
 
 from __future__ import annotations
 
@@ -49,7 +18,6 @@ def note_name(f0):
 
 
 def font(size, bold=False):
-    """Font by name only, with a default fallback. No absolute path."""
     from PIL import ImageFont
 
     name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
@@ -76,13 +44,12 @@ def label_chladni(src, dst, seg):
         n, m, w = modes[0]
         title = f"Chladni plate  strongest mode n={n}  m={m}  w={w:.2f}"
     elif "n" in seg["chladni"] and "m" in seg["chladni"]:
-        # packs written before the plate model carried one (n, m) pair
+
         n, m = seg["chladni"]["n"], seg["chladni"]["m"]
         title = f"Chladni  n={n}  m={m}"
     else:
-        # No modes excited and no legacy pair: a silent segment.
-        # There is no mode to name, so skip this label cleanly
-        # instead of failing on the missing fields.
+
+
         return None
     f0 = seg.get("f0_hz", 0.0)
     hf = seg.get("harmonic_f0_hz", 0.0)
@@ -120,7 +87,7 @@ def label_spectrogram(src, dst, seg, sr):
     from PIL import Image, ImageDraw
 
     im = Image.open(src).convert("RGB")
-    # Flip: original row 0 (top) = lowest place; labeled = low at bottom.
+
     im = im.transpose(Image.FLIP_TOP_BOTTOM)
     w0, h0 = 640, 320
     big = im.resize((w0, h0), Image.BILINEAR)
@@ -208,7 +175,6 @@ def label_waveform(src, dst, seg):
 
 
 def label_pack(pack_dir, indices=None):
-    """Label every image in a token-pack output directory."""
     pack_dir = Path(pack_dir)
     pack = json.loads((pack_dir / "token_pack.json").read_text())
     imgs = pack_dir / "images"

@@ -1,15 +1,4 @@
-"""Multi-pitch candidate list for AURIS token packs.
-
-Harmonic-stack scores for MIDI 21-108, top peaks with non-maximum
-suppression of plus or minus one semitone, reported as the top 5.
-
-This is a candidate list only. It does not replace the single-f0
-reading in a token pack, and it is not a clean voicing:
-octave-below duplicates can appear in the later slots, it fails on
-noisy sounds, and it fails on sequential notes inside one window.
-Scores are raw FFT-magnitude sums; compare score_norm
-(candidate / top score), not the raw score, across segments.
-"""
+"""Multi-pitch candidate list: harmonic-stack scores for MIDI 21 to 108, top 5 with semitone non-maximum suppression."""
 
 from __future__ import annotations
 
@@ -17,7 +6,6 @@ import numpy as np
 
 
 def stack_scores(samples, sr):
-    """Harmonic-stack scores keyed by MIDI note number."""
     seg = samples[: sr * 2] if len(samples) >= sr * 2 else samples
     if len(seg) == 0:
         return {}
@@ -41,7 +29,6 @@ def stack_scores(samples, sr):
 
 
 def top_peaks(scores, n=5):
-    """Top peaks, suppressing neighbours within one semitone."""
     order = sorted(scores, key=lambda m: -scores[m])
     picked = []
     for m in order:

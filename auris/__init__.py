@@ -1,12 +1,4 @@
-"""Auris — Vanta's deterministic, model-free sense of hearing.
-
-Sound -> tonotopic place map (the ear, via AURIS's own FFT) -> structured text
-(perception, Irix-style) -> episodic memory (hippocampus) -> recognition (gallery).
-No AI, no model: pure DSP + geometry + remembered exemplars. Afferent-only (AGM):
-it perceives and remembers, it never acts.
-
-Sibling to Irix (the eyes). Working name; Flouk may rename.
-"""
+"""A deterministic, model-free sense of hearing."""
 from __future__ import annotations
 
 from .sense import Ear
@@ -17,5 +9,4 @@ __version__ = "0.3.0"
 
 
 def hear_file(wav, **kw):
-    """Convenience: perceive a WAV file with a throwaway Ear on the default store."""
     return Ear().hear_file(wav, **kw)

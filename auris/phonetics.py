@@ -1,17 +1,4 @@
-"""Phonetic features — the mid-level cues the superior temporal gyrus reads.
-
-Between raw sound and whole words, the brain represents *phonetic features*: is
-this frame voiced, a vowel, a fricative (s/sh/f), a plosive burst (p/t/k), a nasal
-(m/n)? Plus where the formants sit. We compute these model-free from the per-frame
-`Percept` scalars Auris already has, adding formant peaks (formants.py). The result
-is a per-frame feature track that can enrich the spectrotemporal trajectory.
-
-Voice-onset-time (VOT) — the gap between a plosive burst and the start of voicing —
-is the classic categorical-perception cue (/b/ vs /p/ flips at ~30 ms). The 46 ms
-Percept frames are too coarse to resolve it, so VOT gets its OWN fine-hop analysis
-on the raw samples. The sharp threshold on a smooth continuum IS the categorical
-boundary — pure geometry, no model.
-"""
+"""Phonetic features per frame: voicing, vowel, fricative, plosive and nasal fractions, formants, and voice onset time."""
 from __future__ import annotations
 
 import numpy as np
@@ -19,7 +6,7 @@ import numpy as np
 from . import audio_io, formants
 from .cochlea import BLOCK
 
-# per-frame feature layout (all bounded ~0..1)
+
 FEATURES = ["voiced", "vowel", "fricative", "plosive", "nasal",
             "f1n", "f2n", "f3n", "centroid", "flatness"]
 K = len(FEATURES)
@@ -31,11 +18,6 @@ def _nrm(f):
 
 
 def frame_features(percepts, samples, sr):
-    """Return (n_frames x K feature track, n_frames x 3 formant track in Hz).
-
-    Manner cues come from the Percept scalars; formants are recomputed per block.
-    Plosive detection needs the previous frame, so it's computed over the sequence.
-    """
     window = np.hanning(BLOCK).astype(np.float32)
     freqs = np.fft.rfftfreq(BLOCK, 1.0 / sr)
     blocks = list(audio_io.blocks(np.asarray(samples, np.float32), BLOCK))
@@ -65,12 +47,6 @@ def frame_features(percepts, samples, sr):
 
 
 def _periodicity(seg, sr):
-    """Peak normalized cross-correlation (NCCF) in the 80-400 Hz voicing band.
-
-    Per-lag normalization (divide by the overlapping segments' own energies) gives
-    ~1.0 at the true period for a clean tone regardless of lag — unlike a plain
-    autocorrelation, whose triangular decay understates long-period (low-pitch)
-    voicing."""
     seg = np.asarray(seg, dtype=np.float64)
     seg = seg - seg.mean()
     N = len(seg)
@@ -88,11 +64,6 @@ def _periodicity(seg, sr):
 
 
 def voice_onset_time(samples, sr, hop=256, win=512, boundary_ms=30.0):
-    """Time from a plosive burst to voicing onset -> categorical voiced/voiceless.
-
-    Fine-hop (≈6 ms) so it can resolve the ~30 ms boundary the 46 ms Percept frames
-    cannot. Returns vot_ms + the class the sharp boundary assigns.
-    """
     x = np.asarray(samples, dtype=np.float32)
     if len(x) < win * 2:
         return {"vot_ms": None, "phon_class": None, "boundary_ms": boundary_ms}
@@ -105,8 +76,8 @@ def voice_onset_time(samples, sr, hop=256, win=512, boundary_ms=30.0):
     if len(above) == 0:
         return {"vot_ms": None, "phon_class": None, "boundary_ms": boundary_ms}
     burst = int(above[0])
-    # voicing uses a LONGER window than the energy frame: over ~23 ms a real tone
-    # still peaks near 1.0 while transient burst noise averages well below the bar.
+
+
     vwin = max(win, 1024)
     voice = None
     for k in range(burst, len(starts)):
@@ -124,7 +95,6 @@ def voice_onset_time(samples, sr, hop=256, win=512, boundary_ms=30.0):
 
 
 def summarize(feat_track):
-    """A compact human-readable read of a phonetic track (for describe_word)."""
     if feat_track.size == 0:
         return "no phonetic content"
     frac = feat_track.mean(axis=0)

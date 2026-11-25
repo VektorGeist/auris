@@ -1,13 +1,4 @@
-"""Sound recognition gallery — "memory, not inference" (Irix's principle).
-
-A growing zip-backed store of remembered sound exemplars. A sound is fingerprinted
-by its tonotopic descriptor (the aggregated place map — an L1-normalized histogram),
-and recognition is nearest-neighbour by chi-square distance over everything ever
-heard. No model. More exemplars -> strictly better recognition; no ceiling.
-
-Zip layout mirrors Irix's gallery (<id>.npy descriptor + <id>.json meta) so the
-idiom is shared, but Auris's descriptor is a sound, not a picture.
-"""
+"""A store of remembered sound exemplars; recognition by nearest-neighbour chi-square distance over tonotopic descriptors and spectrotemporal trajectories."""
 from __future__ import annotations
 
 import io
@@ -21,43 +12,18 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_DIST = float(os.environ.get("AURIS_MATCH_DIST", "0.0587"))
-# Descriptor (median place vector, chi2) match threshold. MEASURED BASIS:
-# the equal-error point of the same-class vs different-class chi2
-# distributions on the 2026-11-23 exam teach/test sets (modal-synthesis
-# containers, 8 classes, 4 teach + 4 test takes each), measured
-# 2026-11-24 AFTER the ear fixes of that day: 16.3% false-accept and
-# 16.4% false-reject at this value — the classes overlap even on
-# synthetic material, so this is a balance point, not a separation.
-# NOT calibrated on real recordings: on real music pieces (the
-# composing drafts) same-class descriptor distances averaged 0.358 in
-# the post-fix leave-one-out measurement, far above this value, so on
-# real material this threshold mostly rejects. A real-capture
-# calibration is still outstanding; do not read 0.0587 as universal.
+
 
 DEFAULT_TRAJ_DIST = float(os.environ.get("AURIS_TRAJ_DIST", "0.0533"))
-# Trajectory (DTW) match threshold, on the same mean-per-frame chi2 scale
-# as DEFAULT_DIST. MEASURED BASIS: the equal-error point of the
-# same-class vs different-class DTW distributions on the same
-# 2026-11-23 exam sets, measured 2026-11-24 AFTER the ear fixes of that
-# day (the fixes compressed the distance scale; the earlier 0.11 was
-# measured before them and false-accepted 31% of different-class pairs
-# on these sets afterwards): 9.4% false-accept and 9.4% false-reject at
-# this value. NOT calibrated on real recordings: on the composing
-# drafts same-class DTW distances averaged 0.489 in the post-fix
-# leave-one-out measurement, far above this value, so on real material
-# this threshold mostly rejects. A real-capture calibration is still
-# outstanding; do not read 0.0533 as universal.
 
 
 def chi2(a, b) -> float:
-    """Chi-square distance between two L1-normalized histograms. 0 = identical."""
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     return float(0.5 * np.sum((a - b) ** 2 / (a + b + 1e-10)))
 
 
 class SoundGallery:
-    """Append-only zip of remembered sound exemplars; cached in memory for matching."""
 
     def __init__(self, path):
         self.path = str(path)
@@ -108,12 +74,6 @@ class SoundGallery:
 
     def remember(self, desc, name: str, meta: dict | None = None,
                  traj=None) -> str:
-        """Store one sound exemplar's descriptor under `name`. Returns entry id.
-
-        `traj` (optional) is the sound's spectrotemporal trajectory (T x F);
-        when stored, the exemplar can also be matched by trajectory (DTW),
-        which keeps the sound's shape over time that the aggregated
-        descriptor collapses."""
         eid = uuid.uuid4().hex
         m = {"name": name, "ts": time.time()}
         if meta:
@@ -122,7 +82,6 @@ class SoundGallery:
         return eid
 
     def match(self, desc, threshold: float | None = None) -> dict:
-        """Nearest remembered sound — minimum chi-square over the gallery."""
         thr = DEFAULT_DIST if threshold is None else threshold
         best_name, best = None, 1e9
         for e in self._load().values():
@@ -135,11 +94,6 @@ class SoundGallery:
                 "known": known, "nearest": best_name}
 
     def match_traj(self, traj, threshold: float | None = None) -> dict:
-        """Nearest remembered sound by trajectory — DTW over stored trajectories.
-
-        Only exemplars remembered with a trajectory take part. The distance is
-        spectrotemporal.dtw's mean per-frame chi2, on the same scale as the
-        descriptor distance, so the two thresholds are comparable."""
         from . import spectrotemporal
         thr = DEFAULT_TRAJ_DIST if threshold is None else threshold
         best_name, best = None, 1e9
@@ -159,8 +113,6 @@ class SoundGallery:
 
     def match_any(self, desc, traj=None, threshold: float | None = None,
                   traj_threshold: float | None = None) -> dict:
-        """Best available recognition: trajectory when the query carries one
-        and the gallery holds trajectory exemplars, else the descriptor."""
         if traj is not None and self.has_traj():
             return self.match_traj(traj, threshold=traj_threshold)
         out = self.match(desc, threshold=threshold)

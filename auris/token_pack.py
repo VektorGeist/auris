@@ -1,50 +1,4 @@
-"""AURIS token pack (file input).
-
-One pack per audio file, one block per time segment, everything
-together:
-- time stamp, start and end
-- structured text (perceive.describe, AURIS's own words, unchanged)
-- pitch, loudness, centroid, peak Hz, region, onset proxy,
-  pitch and loudness trends
-- the Chladni plate per segment: the mode weights the segment's spectrum
-  excites on the square plate model in chladni.py (each mode carries its
-  own resonant frequency; the weights are numbers in the pack), plus the
-  figure of the weighted mix of mode shapes
-- spectrogram slice image per segment (tonotopic field, dB)
-- oscilloscope waveform per segment: amplitude over time, tokenized
-  as peak, RMS, zero-crossing rate and a 20-bin envelope, plus a
-  waveform line image. AURIS itself does NOT use an oscilloscope.
-  This is an extra, separate channel added to the pack, alongside
-  Chladni and spectrogram, not a claim about AURIS internals.
-  A waveform line shows amplitude over time, a Chladni figure shows
-  the vibration shape a frequency makes. They are different views;
-  neither replaces the other.
-- gallery nearest name and distance, read-only (no memory writes
-  here), with a calibration warning: the gallery default threshold
-  is a synthetic placeholder; calibrate on real captures before
-  trusting a name.
-- polyphony candidates per segment: top-5 pitch candidates with
-  harmonic-stack scores, in addition to the single f0 and
-  harmonic_f0 fields. The original AURIS text is unchanged;
-  candidates are a candidate list only, not a replacement pitch,
-  and they still fail on noise and on sequential notes inside one
-  window.
-- the segment text is gated by perceive.gate, the same tonal /
-  silent / voiced-share gate the Ear uses, so the pack and the
-  Ear describe a sound the same way. The harmonic and polyphony
-  outputs each carry a confidence (top score against the median
-  score of the whole scan); silent segments skip both scans and
-  report empty results, never an invented pitch.
-
-This is a wrapper around existing AURIS code. It uses equal
-segments over the file and Cochlea directly, so the Ear's
-gallery and hippocampus memory are never written by this script.
-Pillow is optional and only needed for image output.
-
-Usage:
-  python -m auris.token_pack input.wav --segments 20 --out out_dir
-  python -m auris.token_pack input.wav --segments 20 --out out_dir --no-images
-"""
+"""Assembles one token pack per audio file, one block per time segment."""
 
 from __future__ import annotations
 
@@ -73,15 +27,6 @@ def load_wav(path):
 
 
 def harmonic_f0(samples, sr):
-    """Harmonic-stack pitch: score MIDI 21-108 by f+2f+3f+4f energy.
-
-    Fixes octave errors where a harmonic is louder than the
-    fundamental. Returns (f_hz, midi, confidence), or (0.0, 0, 0.0)
-    on short or empty input. Confidence is the winning score against
-    the median score across the whole MIDI scan: a real tone's stack
-    stands far above the field, while noise scores are all alike, so
-    noise cannot report a confident note.
-    """
     if samples is None or len(samples) < 1024 or sr <= 0:
         return 0.0, 0, 0.0
     seg = samples[: sr * 2]
@@ -111,21 +56,6 @@ def harmonic_f0(samples, sr):
 
 
 def polyphony_candidates(samples, sr, n=5):
-    """Top-N pitch candidates with harmonic-stack scores for one segment.
-
-    Harmonic-stack scores over MIDI 21-108, plus-or-minus one
-    semitone non-maximum suppression, first 2 s of the segment
-    (stack_scores truncates). Scores are raw FFT-magnitude sums,
-    so score_norm (candidate / top score) is the comparable
-    number, not the raw score. Returns (candidates, confidence),
-    ([], 0.0) on short or empty input. Confidence is the top
-    score against the median score across the whole MIDI scan:
-    real tones stand far above the field, noise does not, so
-    noise cannot report a confident note.
-    It does not apply the sub-octave suppression in harmonic_f0,
-    so octave-below candidates can and do appear in the list;
-    that is a known failure mode, reported, not hidden.
-    """
     if samples is None or len(samples) < 1024 or sr <= 0:
         return [], 0.0
     try:
@@ -213,8 +143,7 @@ def main(argv=None):
               file=sys.stderr)
         return 1
 
-    # Read-only gallery, if present. Never writes. The gallery is chosen by
-    # --gallery / AURIS_GALLERY, falling back to the home location.
+
     gallery = None
     gallery_path = (args.gallery or os.environ.get("AURIS_GALLERY")
                     or str(Path.home() / ".auris" / "gallery.zip"))
@@ -234,25 +163,24 @@ def main(argv=None):
             continue
         t_start = float(seg[0].t)
         t_end = float(seg[-1].t + dt)
-        # The segment's raw samples: the gate judges silence on them,
-        # and the oscilloscope / harmonic channels below read them.
+
+
         s0 = int(t_start * sr)
         s1 = int(min(len(samples), t_end * sr))
         wseg = samples[s0:s1] if s1 > s0 else np.array([0.0], dtype=np.float32)
         seg_rms = float(np.sqrt(np.mean(wseg ** 2))) if wseg.size else 0.0
-        # The same tonal / silent / voiced-share gate the Ear uses
-        # (perceive.gate): one code path describes every sound, so a
-        # chord reads tonal and silence reads silence here too.
+
+
         g = gate(seg, rms=seg_rms)
         f0 = g["f0"]
         loud = float(np.mean([p.loud for p in seg]))
         cen = float(np.median([p.centroid for p in seg]))
         mid = float(np.median([p.mid for p in seg]))
-        # Peak place: mean place map, argmax -> centre Hz.
+
         mean_place = np.mean([p.place for p in seg], axis=0)
         peak_idx = int(np.argmax(mean_place))
         peak_hz = float(cochlea.centers[peak_idx])
-        # Trends: first half vs second half median.
+
         half = max(1, len(seg) // 2)
         f_first = (
             np.median([p.f0 for p in seg[:half] if p.f0 > 0])
@@ -292,10 +220,7 @@ def main(argv=None):
         }
         text = describe(agg)["text"]
 
-        # The plate: the segment's whole spectrum excites the square
-        # plate's modes, each at its own resonant frequency. The weights
-        # are the channel's numbers; the figure below is their mix. No
-        # mode is chosen by pitch.
+
         seg_weights = chladni.plate_weights(mean_place,
                                             centers=cochlea.centers)
         seg_modes = chladni.top_modes(seg_weights, k=8)
@@ -335,10 +260,7 @@ def main(argv=None):
             "calibrate on real captures before trusting a name.",
         }
 
-        # Harmonic stack and polyphony scan. A silent segment is
-        # skipped outright: on digital silence both scans only invent
-        # a pitch (they reported A0 at 27.5 Hz), so silence carries
-        # empty results and zero confidence.
+
         if g["silent"]:
             hf, hm, hconf = 0.0, 0, 0.0
             candidates, pconf = [], 0.0
@@ -357,10 +279,8 @@ def main(argv=None):
             "candidates": candidates,
         }
         seg_out["octave_corrected"] = bool(hf and f0 and abs(hf - f0) / max(f0, 1) > 0.4)
-        # Never silently replace AURIS text. "text" stays the original
-        # perceive.describe wording. When the harmonic stack disagrees
-        # by more than 40% (octave error), add a flagged note field
-        # carrying the harmonic pitch alongside, not instead.
+
+
         seg_out["auris_text_original"] = text
         if seg_out["octave_corrected"]:
             _hn = f"{NOTE_NAMES[hm % 12]}{hm // 12 - 1} ({hf:.0f} Hz)" if hm else f"{hf:.0f} Hz"
@@ -376,7 +296,7 @@ def main(argv=None):
         rms_amp = float(np.sqrt(np.mean(wseg**2))) if wseg.size else 0.0
         zc = int(np.sum(np.diff(np.signbit(wseg)))) if wseg.size > 1 else 0
         zc_rate = round(zc / (t_end - t_start), 1) if t_end > t_start else 0
-        # Envelope: max abs in 20 equal bins, tokenizable as numbers.
+
         bins = np.array_split(np.abs(wseg), 20) if wseg.size else []
         envelope = [round(float(np.max(b)) if b.size else 0.0, 3) for b in bins]
         seg_out["oscilloscope"] = {
@@ -419,7 +339,7 @@ def main(argv=None):
                 p = out_dir / "images" / f"seg{i:02d}_chladni.png"
                 img.save(p)
                 seg_out["chladni_image"] = str(p.name)
-                # Spectrogram slice: mean place x time for this segment, as dB image.
+
                 spec_field = np.array(
                     [p.place * max(p.energy, 0.0) for p in seg], dtype=np.float64
                 ).T
@@ -441,9 +361,7 @@ def main(argv=None):
         if args.stream:
             print(json.dumps(seg_out), flush=True)
 
-    # Phonetics, whole file, model-free manner cues (NOT transcription).
-    # All fractions are reported, top-first, and no threshold hides
-    # the raw numbers.
+
     phonetics_out = None
     try:
         _feats, _ftrack = _phon.frame_features(percepts, samples, sr)
