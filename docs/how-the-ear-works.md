@@ -17,6 +17,10 @@ previous stage's output and adds its own.
    in cents from the nearest note.
 4. Field. `render.py` builds the spatial field, frequency by time
    weighted by loudness, and can save it as an image and read it back.
+   Its `irix_read` function optionally reads the saved field through
+   an external `irix` package when one is importable, including from
+   a sibling `irix/src` folder next to this repository. Without it,
+   the field is read numerically by `read_field`.
 5. Trajectory. `spectrotemporal.py` keeps a 24-step by 32-place image
    of how the energy moves over time.
 6. Text. `perceive.py` turns the aggregated field into structured
